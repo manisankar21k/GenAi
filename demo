@@ -1,0 +1,302 @@
+Banking and Financial Services
+Intelligent Loan Advisor and Policy Assistant
+Document 1: Loan Product Catalog
+
+Document ID: BFS-LA-001
+ Version: 1.0
+ Classification: Policy Reference
+
+Table of Contents
+Product Overview
+Home Loan Product Terms
+Personal Loan Product Terms
+Education Loan Product Terms
+Vehicle Loan Product Terms
+1. Product Overview
+Loan Type	Purpose	Loan Amount	Tenure	Collateral	Use CaseHome Loan	Purchase, construction, renovation, balance transfer	INR 5 lakh to INR 5 crore	5 to 30 years	Property mortgage	Residential property finance
+Personal Loan	Unsecured personal financing	INR 50,000 to INR 40 lakh	12 to 84 months	None	Personal expenses, planned purchases, debt consolidation
+Education Loan	Domestic or overseas studies	INR 1 lakh to INR 75 lakh	Course period + up to 15 years	Collateral above threshold	Tuition, hostel, travel, laptop, exam fees
+Vehicle Loan	New or used private vehicle	INR 1 lakh to INR 1 crore	12 to 84 months	Vehicle hypothecation	Car, two-wheeler, light commercial vehicle
+2. Home Loan Product Terms
+Eligibility & Policy
+Minimum applicant age: 21 years
+Maximum age at maturity:
+Salaried: 70 years
+Self-employed: 75 years
+Maximum tenure: 30 years
+Subject to age-at-maturity and repayment capacity
+Loan-to-Value (LTV)
+Up to INR 30 lakh: 90%
+INR 30 lakh to INR 75 lakh: 80%
+Above INR 75 lakh: 75%
+Mandatory Requirements
+Legal title verification
+Technical valuation
+Property insurance
+Executed loan agreements
+Request Types
+Request Type	Policy TreatmentBalance Transfer	Permitted if repayment track is satisfactory and title is acceptable
+Construction Loan	Stage-wise disbursement after progress verification
+Renovation Loan	Allowed for eligible residential properties with verified cost estimate
+3. Personal Loan Product Terms
+Minimum credit score: 700
+Minimum monthly income:
+Listed employers: INR 25,000
+Other employers: INR 35,000
+No collateral required
+Employer verification mandatory
+Bank statement review mandatory
+Top-up loan eligible after:
+9 completed EMIs
+No bounce in last 6 months
+4. Education Loan Product Terms
+Co-applicant mandatory
+Moratorium:
+Course period + 12 months, OR
+6 months after employment
+Whichever is earlier
+Collateral Requirement
+Required for exposure above INR 7.5 lakh
+Eligible Expenses
+Tuition fees
+Examination fees
+Living expenses
+Books
+Laptop
+Travel
+Insurance
+Refundable deposits
+5. Vehicle Loan Product Terms
+New vehicles funded up to 90% of on-road price
+Used vehicle age at maturity must not exceed 10 years
+Comprehensive insurance with hypothecation clause mandatory
+Hypothecation removal only after complete loan closure
+Document 2: Loan Policy Reference
+
+Document ID: BFS-LA-002
+ Version: 1.0
+ Classification: Policy Reference
+
+Table of Contents
+Scope and Applicability
+Underwriting Principles
+Approval and Deviation Matrix
+Decline and Reconsideration Rules
+1. Scope and Applicability
+
+This policy defines:
+
+Retail loan recommendations
+Policy explanations
+Eligibility criteria
+Documentation requirements
+Customer-facing responses
+
+Applicable for:
+
+Home Loans
+Personal Loans
+Education Loans
+Vehicle Loans
+Key Rules
+Recommendations must consider product terms, applicant profile, repayment capacity, risk classification, and verification status.
+Final approval requires underwriting review and document verification.
+Indicative eligibility is not final approval.
+2. Underwriting Principles
+Repayment Capacity Assessment
+
+Based on:
+
+Verified income
+Existing obligations
+Proposed EMI
+Repayment Intent Assessment
+
+Based on:
+
+Credit score
+Repayment track record
+Cheque-bounce history
+Delinquency data
+Risk Considerations
+Employment/business stability improves confidence.
+Collateral lowers risk but does not replace repayment capacity.
+3. Approval and Deviation Matrix
+Case Type	Decision Route	Required ChecksLow Risk & Within Policy	Standard Recommendation	KYC, Income, Credit Bureau, Obligation Check
+Medium Risk / High Exposure	Credit Manager Review	Credit Memo, Income Analysis, Product Fit
+Policy Deviation / Elevated Risk	Senior Credit Review	Deviation Note, Audit Trail
+Fraud / KYC Concern	Hold & Escalation	Enhanced Verification
+4. Decline and Reconsideration Rules
+Reason	Explanation	Possible Next StepLow Income	Repayment capacity insufficient	Reduce amount, extend tenure, add co-applicant
+Low Credit Score	Repayment history below threshold	Improve score, submit closure proof
+Document Mismatch	KYC/Income inconsistency	Submit corrected documents
+Collateral Issue	Legal/valuation issue	Provide clarification or alternate collateral
+Document 3: Loan FAQ Knowledge Base
+
+Document ID: BFS-LA-003
+ Version: 1.0
+ Classification: Customer Reference
+
+Eligibility Questions
+Can salaried customers apply?
+
+Yes. Subject to age, income, employment stability, credit score, and FOIR requirements.
+
+Can self-employed customers apply?
+
+Yes. Additional business proof may be required.
+
+Is a co-applicant required?
+
+Mandatory for Education Loans and recommended for Home Loans when income is insufficient.
+
+Does credit score matter?
+
+Yes. It affects eligibility, pricing, approval route, and documentation requirements.
+
+Can applicants have another active loan?
+
+Yes, provided total obligations stay within FOIR limits.
+
+Documentation Questions
+Is PAN required?
+
+PAN or a legally accepted alternative declaration is required.
+
+Are bank statements required?
+
+Yes. Used to verify income, obligations, and transaction conduct.
+
+Are scanned documents accepted?
+
+Accepted for preliminary review. Originals may be requested before disbursement.
+
+What if documents mismatch?
+
+Application remains on hold until corrected documents are submitted.
+
+EMI, Rate and Repayment Questions
+How is EMI calculated?
+
+EMI depends on principal, interest rate, and tenure.
+
+Can rates change?
+Floating rates may change with benchmark rates.
+Fixed rates remain unchanged during the fixed-rate period.
+Can part payment be made?
+
+Yes, subject to loan-specific rules.
+
+What if EMI is missed?
+
+Late charges may apply and credit score may be impacted.
+
+Application Process Questions
+How long does approval take?
+Loan Type	TimelinePersonal Loan	1 to 3 working days
+Vehicle Loan	2 to 5 working days
+Education Loan	5 to 10 working days
+Home Loan	7 to 15 working days
+Can status be tracked?
+
+Yes, using the application reference number.
+
+Can rejected applicants reapply?
+
+Yes, after resolving the rejection reason.
+
+Document 4: Interest Rates and Fees (BFS-LA-004)
+Interest Rate Bands
+Loan Type	Low Risk	Standard Risk	Elevated RiskHome Loan	8.35%-8.90%	8.95%-10.25%	10.30%-11.50%
+Personal Loan	10.75%-12.50%	12.55%-15.50%	15.55%-18.00%
+Education Loan	8.25%-9.50%	9.55%-11.75%	11.80%-13.50%
+Vehicle Loan	8.75%-10.25%	10.30%-12.75%	12.80%-14.50%
+Pricing Factors
+Score above 775: Best pricing
+Score 725-774: Standard pricing
+Score 675-724: Elevated pricing or mitigants
+Delinquency/high obligations: Manual review
+Document 5: Eligibility Criteria (BFS-LA-005)
+Eligibility Matrix
+Loan Type	Age	Minimum Income	Credit ScoreHome Loan	21-70/75	INR 25k-35k	700 Preferred
+Personal Loan	21-60	INR 25k/35k	700 Minimum
+Education Loan	Student 18+	Co-applicant Assessed	Case-Based
+Vehicle Loan	21-65	INR 20k Monthly	675 Preferred
+FOIR Interpretation
+Result	InterpretationWithin Limit	Proceed to further checks
+Slightly Above Limit	Lower amount / longer tenure / co-applicant
+Significantly Above Limit	Normally not recommended
+Document 6: Documentation and KYC Checklist (BFS-LA-006)
+Mandatory KYC Documents
+Identity Proof
+PAN
+Aadhaar
+Passport
+Voter ID
+Address Proof
+Utility Bill
+Aadhaar
+Passport
+Bank Statement
+Income Proof
+Salary Slips
+ITR
+Bank Statements
+Business Documents
+Additional Loan-Specific Documents
+Loan Type	Additional DocumentsHome Loan	Property Papers, Legal Report, Valuation
+Education Loan	Admission Letter, Fee Schedule
+Vehicle Loan	Quotation, Invoice, Insurance
+Personal Loan	Employer Verification
+Document 7: EMI, Repayment and Foreclosure Guide (BFS-LA-007)
+EMI Formula
+EMI=P×r×(1+r)n(1+r)n−1EMI = \frac{P \times r \times (1+r)^n}{(1+r)^n - 1}EMI=(1+r)n−1P×r×(1+r)n​
+
+Where:
+
+P = Principal Amount
+r = Monthly Interest Rate
+n = Number of Instalments
+Sample EMI Reference
+Loan Type	Amount	Rate	Tenure	Approx EMIPersonal Loan	INR 10,00,000	10.50%	60 Months	INR 21,494
+Home Loan	INR 50,00,000	8.75%	240 Months	INR 44,186
+Vehicle Loan	INR 8,00,000	9.50%	84 Months	INR 13,048
+Education Loan	INR 20,00,000	9.25%	180 Months	INR 20,585
+Document 8: Credit Risk and Approval Rules (BFS-LA-008)
+Credit Score Bands
+Score	Risk Grade	Recommendation775+	Low Risk	Best Pricing
+725-774	Standard Risk	Standard Route
+700-724	Moderate Risk	Manual Review
+675-699	Elevated Risk	Additional Mitigants
+Below 675	High Risk	Normally Decline
+Risk Decision Rules
+
+Approve only when:
+
+KYC completed
+Income verified
+Bureau checks completed
+FOIR within limits
+Product conditions satisfied
+Document 9: Loan Application Process and Status (BFS-LA-009)
+End-to-End Application Flow
+Application Submitted
+Document Collection
+Verification
+Credit Assessment
+Sanction
+Documentation
+Disbursement
+Status Definitions
+Status	Meaning	Customer MessageSubmitted	Application Received	Your application has been received.
+Documents Pending	Incomplete Documents	Please upload pending documents.
+Verification in Progress	Data Validation	Verification is under process.
+Credit Review	Eligibility Assessment	Application under credit review.
+Approved	Sanction Available	Please review sanction conditions.
+Rejected	Policy Criteria Not Met	Request reconsideration if applicable.
+Disbursed	Funds Released	Loan amount has been disbursed.
+Service Timelines
+Loan Type	TimelinePersonal Loan	1-3 Working Days
+Vehicle Loan	2-5 Working Days
+Education Loan	5-10 Working Days
+Home Loan	7-15 Working Days
