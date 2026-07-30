@@ -1,302 +1,1098 @@
-Banking and Financial Services
-Intelligent Loan Advisor and Policy Assistant
-Document 1: Loan Product Catalog
+# app.py
+import streamlit as st
 
-Document ID: BFS-LA-001
- Version: 1.0
- Classification: Policy Reference
+st.set_page_config(page_title="LoanAdvisor AI", layout="wide", initial_sidebar_state="expanded")
 
-Table of Contents
-Product Overview
-Home Loan Product Terms
-Personal Loan Product Terms
-Education Loan Product Terms
-Vehicle Loan Product Terms
-1. Product Overview
-Loan Type	Purpose	Loan Amount	Tenure	Collateral	Use CaseHome Loan	Purchase, construction, renovation, balance transfer	INR 5 lakh to INR 5 crore	5 to 30 years	Property mortgage	Residential property finance
-Personal Loan	Unsecured personal financing	INR 50,000 to INR 40 lakh	12 to 84 months	None	Personal expenses, planned purchases, debt consolidation
-Education Loan	Domestic or overseas studies	INR 1 lakh to INR 75 lakh	Course period + up to 15 years	Collateral above threshold	Tuition, hostel, travel, laptop, exam fees
-Vehicle Loan	New or used private vehicle	INR 1 lakh to INR 1 crore	12 to 84 months	Vehicle hypothecation	Car, two-wheeler, light commercial vehicle
-2. Home Loan Product Terms
-Eligibility & Policy
-Minimum applicant age: 21 years
-Maximum age at maturity:
-Salaried: 70 years
-Self-employed: 75 years
-Maximum tenure: 30 years
-Subject to age-at-maturity and repayment capacity
-Loan-to-Value (LTV)
-Up to INR 30 lakh: 90%
-INR 30 lakh to INR 75 lakh: 80%
-Above INR 75 lakh: 75%
-Mandatory Requirements
-Legal title verification
-Technical valuation
-Property insurance
-Executed loan agreements
-Request Types
-Request Type	Policy TreatmentBalance Transfer	Permitted if repayment track is satisfactory and title is acceptable
-Construction Loan	Stage-wise disbursement after progress verification
-Renovation Loan	Allowed for eligible residential properties with verified cost estimate
-3. Personal Loan Product Terms
-Minimum credit score: 700
-Minimum monthly income:
-Listed employers: INR 25,000
-Other employers: INR 35,000
-No collateral required
-Employer verification mandatory
-Bank statement review mandatory
-Top-up loan eligible after:
-9 completed EMIs
-No bounce in last 6 months
-4. Education Loan Product Terms
-Co-applicant mandatory
-Moratorium:
-Course period + 12 months, OR
-6 months after employment
-Whichever is earlier
-Collateral Requirement
-Required for exposure above INR 7.5 lakh
-Eligible Expenses
-Tuition fees
-Examination fees
-Living expenses
-Books
-Laptop
-Travel
-Insurance
-Refundable deposits
-5. Vehicle Loan Product Terms
-New vehicles funded up to 90% of on-road price
-Used vehicle age at maturity must not exceed 10 years
-Comprehensive insurance with hypothecation clause mandatory
-Hypothecation removal only after complete loan closure
-Document 2: Loan Policy Reference
+# ------------------------------------------------------------------
+# Icon library (feather-style inline SVGs, colored via CSS `stroke:currentColor`
+# unless a fixed stroke color is set on the wrapper in CSS)
+# ------------------------------------------------------------------
+ICONS = {
+    "bank": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V10"/><path d="M19 21V10"/><path d="M12 21V10"/><path d="M3 10l9-6 9 6"/></svg>',
+    "home": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',
+    "user": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>',
+    "doc": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>',
+    "chat": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.2-6.4L21 5l-1 3.6A8 8 0 0 1 21 12z"/><path d="M3 21l1.7-4.4"/></svg>',
+    "folder": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>',
+    "clock": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+    "shield": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 7.5-7 9-3.5-1.5-7-4-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+    "bell": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>',
+    "chevron-down": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+    "arrow-right": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>',
+    "send": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>',
+    "sparkle": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.6L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.4z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
+    "trend-up": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>',
+    "trend-down": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/></svg>',
+    "check-circle": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>',
+    "users": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.3 2.9-6 6.5-6s6.5 2.7 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15 14.2c2.7.4 4.5 2.5 4.5 5.3"/></svg>',
+    "cpu": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg>',
+    "badge": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M9 13l-2 8 5-3 5 3-2-8"/></svg>',
+    "percent": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+    "calendar": '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+}
 
-Document ID: BFS-LA-002
- Version: 1.0
- Classification: Policy Reference
+MENU = [
+    ("Dashboard", "home"),
+    ("AI Policy Assistant", "chat"),
+    ("Loan Products", "folder"),
+    ("Eligibility Check", "user"),
+    ("EMI Calculator", "percent"),
+    ("Application Status", "clock"),
+    ("Document Checklist", "doc"),
+    ("Policy References", "shield"),
+    ("Rates & Fees", "badge"),
+    ("FAQs", "sparkle"),
+]
 
-Table of Contents
-Scope and Applicability
-Underwriting Principles
-Approval and Deviation Matrix
-Decline and Reconsideration Rules
-1. Scope and Applicability
 
-This policy defines:
+def icon(name, cls=""):
+    return f'<span class="{cls}">{ICONS[name]}</span>' if cls else ICONS[name]
 
-Retail loan recommendations
-Policy explanations
-Eligibility criteria
-Documentation requirements
-Customer-facing responses
 
-Applicable for:
+# CSS embedded directly in the Python file
+CSS = """
+/* ================= LoanAdvisor AI — matching the exact mockup ================= */
+:root{
+  --bg:#f0f4f9;
+  --card:#ffffff;
+  --border:#e8edf4;
+  --text:#0b1a33;
+  --muted:#5a6d86;
+  --muted-light:#8a9bb5;
+  --blue:#1a5be8;
+  --blue-light:#e8effd;
+  --green:#0f973d;
+  --purple:#6c3bd6;
+  --orange:#e8851a;
+  --shadow: 0 2px 12px rgba(11,26,51,0.06);
+  --sidebar-w:255px;
+}
 
-Home Loans
-Personal Loans
-Education Loans
-Vehicle Loans
-Key Rules
-Recommendations must consider product terms, applicant profile, repayment capacity, risk classification, and verification status.
-Final approval requires underwriting review and document verification.
-Indicative eligibility is not final approval.
-2. Underwriting Principles
-Repayment Capacity Assessment
+/* ---- app shell ---- */
+html, body{ overflow-x:hidden; }
+.stApp{
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  overflow-x:hidden;
+}
+#MainMenu, header[data-testid="stHeader"], footer{ visibility:hidden; }
+.block-container{ padding-top:1.2rem !important; max-width:1400px; }
 
-Based on:
+/* ---- sidebar ---- */
+section[data-testid="stSidebar"] {
+  background:#ffffff !important;
+  border-right:1px solid var(--border);
+  padding:20px 14px !important;
+  position:fixed !important;
+  top:0; 
+  left:0; 
+  height:100vh !important;
+  width: var(--sidebar-w) !important;
+  min-width: var(--sidebar-w) !important;
+  max-width: var(--sidebar-w) !important;
+  z-index:100;
+  transform:none !important;
+  visibility:visible !important;
+  display:flex !important;
+  box-sizing: border-box !important;
+}
 
-Verified income
-Existing obligations
-Proposed EMI
-Repayment Intent Assessment
+section[data-testid="stSidebar"] > div,
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"],
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
 
-Based on:
+section[data-testid="stSidebar"] > div{
+  padding-top:4px;
+  display:flex; 
+  flex-direction:column; 
+  height:100%; 
+  width:100%;
+  overflow-y:auto;
+  overflow-x:hidden;
+}
 
-Credit score
-Repayment track record
-Cheque-bounce history
-Delinquency data
-Risk Considerations
-Employment/business stability improves confidence.
-Collateral lowers risk but does not replace repayment capacity.
-3. Approval and Deviation Matrix
-Case Type	Decision Route	Required ChecksLow Risk & Within Policy	Standard Recommendation	KYC, Income, Credit Bureau, Obligation Check
-Medium Risk / High Exposure	Credit Manager Review	Credit Memo, Income Analysis, Product Fit
-Policy Deviation / Elevated Risk	Senior Credit Review	Deviation Note, Audit Trail
-Fraud / KYC Concern	Hold & Escalation	Enhanced Verification
-4. Decline and Reconsideration Rules
-Reason	Explanation	Possible Next StepLow Income	Repayment capacity insufficient	Reduce amount, extend tenure, add co-applicant
-Low Credit Score	Repayment history below threshold	Improve score, submit closure proof
-Document Mismatch	KYC/Income inconsistency	Submit corrected documents
-Collateral Issue	Legal/valuation issue	Provide clarification or alternate collateral
-Document 3: Loan FAQ Knowledge Base
+[data-testid="stSidebarResizeHandle"]{
+  display:none !important;
+  pointer-events:none !important;
+}
 
-Document ID: BFS-LA-003
- Version: 1.0
- Classification: Customer Reference
+button[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"],
+button[kind="header"]{
+  display:none !important;
+}
 
-Eligibility Questions
-Can salaried customers apply?
+div[data-testid="stAppViewContainer"] {
+  margin-left: 0 !important;
+  padding-left: var(--sidebar-w) !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
 
-Yes. Subject to age, income, employment stability, credit score, and FOIR requirements.
+div[data-testid="stAppViewContainer"] .main {
+  margin-left: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
 
-Can self-employed customers apply?
+.stMain {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+}
 
-Yes. Additional business proof may be required.
+.block-container {
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
+}
 
-Is a co-applicant required?
+/* ---- brand ---- */
+.brand{ 
+  display:flex; 
+  align-items:center; 
+  gap:12px; 
+  margin-bottom:24px; 
+  padding:0 6px; 
+  min-width:0;
+  background: linear-gradient(135deg, #f8faff, #ffffff);
+  border-radius:12px;
+  padding:8px 12px;
+}
+.brand-icon{
+  width:40px; 
+  height:40px; 
+  min-width:40px; 
+  border-radius:10px;
+  background:linear-gradient(135deg,#1a5be8,#1348b8);
+  display:flex; 
+  align-items:center; 
+  justify-content:center;
+  box-shadow: 0 4px 12px rgba(26,91,232,0.25);
+}
+.brand-icon svg{ width:20px; height:20px; stroke:#fff; }
+.brand-text{ 
+  font-size:15px; 
+  font-weight:700; 
+  color:#0b1a33; 
+  line-height:1.2; 
+  padding-top:0px; 
+  white-space:nowrap; 
+  overflow:hidden; 
+  text-overflow:ellipsis; 
+  min-width:0;
+}
+.brand-text .sub{ 
+  display:block; 
+  font-size:10.5px; 
+  font-weight:500; 
+  color:var(--muted-light); 
+  margin-top:0px; 
+  white-space:nowrap; 
+  overflow:hidden; 
+  text-overflow:ellipsis;
+}
 
-Mandatory for Education Loans and recommended for Home Loans when income is insufficient.
+/* ---- menu ---- */
+.menu{ display:flex; flex-direction:column; gap:2px; margin-top:4px; min-width:0; }
+.menu-item{
+  display:flex; 
+  align-items:center; 
+  gap:12px;
+  padding:9px 12px; 
+  border-radius:8px; 
+  color:#475569;
+  font-size:13.5px; 
+  font-weight:500; 
+  cursor:pointer;
+  min-width:0;
+  transition: all 0.15s ease;
+}
+.menu-item span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+.menu-item svg{ width:17px; height:17px; stroke:currentColor; flex-shrink:0; }
+.menu-item.active{ background:var(--blue-light); color:var(--blue); font-weight:600; border-right:3px solid var(--blue); }
+.menu-item:not(.active):hover{ background:#f8fafc; }
 
-Does credit score matter?
+.sidebar-spacer{ flex:1; }
+.system-status{
+  margin-top:20px; 
+  background:linear-gradient(135deg, #f0f7ff, #e8effd); 
+  border-radius:10px; 
+  padding:12px 14px;
+  display:flex; 
+  gap:10px; 
+  align-items:flex-start;
+  border:1px solid #d6e4ff;
+}
+.system-status svg{ width:18px; height:18px; stroke:#1a5be8; flex-shrink:0; margin-top:1px;}
+.system-status .ss-title{ font-weight:700; font-size:12px; color:#1a3a7a; }
+.system-status .ss-body{ font-size:11px; color:#3a5a8a; margin-top:2px; line-height:1.4;}
 
-Yes. It affects eligibility, pricing, approval route, and documentation requirements.
+/* ---- header ---- */
+.content-header{ 
+  display:flex; 
+  justify-content:space-between; 
+  align-items:center; 
+  margin-bottom:20px;
+  background: white;
+  padding: 16px 20px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+.page-title{ 
+  font-size:20px; 
+  font-weight:800; 
+  color:var(--text); 
+  display:flex; 
+  align-items:center; 
+  gap:8px;
+}
+.page-title .wave{ font-size:20px; }
+.subtitle{ 
+  color:var(--muted); 
+  font-size:12.5px; 
+  margin-top:2px; 
+}
 
-Can applicants have another active loan?
+.user-area{ display:flex; align-items:center; gap:14px; }
+.icon-btn{
+  width:36px; 
+  height:36px; 
+  border-radius:50%; 
+  background:#fff; 
+  border:1px solid var(--border);
+  display:flex; 
+  align-items:center; 
+  justify-content:center; 
+  position:relative; 
+  box-shadow: var(--shadow);
+}
+.icon-btn svg{ width:16px; height:16px; stroke:#475569; }
+.icon-btn .dot{ 
+  position:absolute; 
+  top:6px; 
+  right:7px; 
+  width:7px; 
+  height:7px; 
+  border-radius:50%; 
+  background:#1a5be8; 
+  border:1.5px solid #fff;
+}
+.user-chip{ display:flex; align-items:center; gap:8px; background:#f8fafc; padding:4px 12px 4px 8px; border-radius:30px; border:1px solid var(--border); }
+.avatar{
+  width:32px; 
+  height:32px; 
+  border-radius:50%; 
+  background:linear-gradient(135deg,#1a5be8,#1348b8);
+  color:#fff; 
+  font-weight:700; 
+  font-size:12px; 
+  display:flex; 
+  align-items:center; 
+  justify-content:center;
+}
+.user-meta{ line-height:1.2; }
+.username{ font-size:12.5px; font-weight:700; color:var(--text); }
+.role{ font-size:10.5px; color:var(--muted); display:block; }
+.chevron{ width:12px; height:12px; stroke:#94a3b8; margin-left:0px;}
 
-Yes, provided total obligations stay within FOIR limits.
+/* ---- welcome banner ---- */
+.welcome-banner{
+  background: linear-gradient(135deg, #1a5be8, #1348b8);
+  color: white;
+  padding: 20px 24px;
+  border-radius: 14px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.welcome-banner h2{
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+.welcome-banner p{
+  font-size: 13px;
+  opacity: 0.9;
+  margin: 4px 0 0 0;
+}
+.welcome-banner .explore-btn{
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  padding: 8px 20px;
+  border-radius: 30px;
+  color: white;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
 
-Documentation Questions
-Is PAN required?
+/* ---- loan product cards ---- */
+.loan-products{
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.loan-card{
+  background: white;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.loan-card h4{
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.loan-card .amount{
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--blue);
+  margin: 6px 0 2px 0;
+}
+.loan-card .tenure{
+  font-size: 12px;
+  color: var(--muted);
+}
+.loan-card .explore-link{
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 12px;
+  text-decoration: none;
+}
 
-PAN or a legally accepted alternative declaration is required.
+/* ---- metrics row ---- */
+.metrics-row{ 
+  display:grid; 
+  grid-template-columns:repeat(4,1fr); 
+  gap:14px; 
+  margin-bottom:18px;
+}
+.stat-card{
+  background:var(--card); 
+  border-radius:12px; 
+  padding:16px 16px 10px 16px;
+  box-shadow:var(--shadow); 
+  border:1px solid var(--border);
+}
+.stat-top{ 
+  display:flex; 
+  align-items:center; 
+  gap:10px; 
+  margin-bottom:10px;
+}
+.stat-icon{ 
+  width:34px; 
+  height:34px; 
+  border-radius:8px; 
+  display:flex; 
+  align-items:center; 
+  justify-content:center;
+}
+.stat-icon svg{ width:16px; height:16px; }
+.stat-title{ color:var(--muted); font-size:11.5px; font-weight:500; }
+.stat-value{ font-size:20px; font-weight:800; color:var(--text); margin-top:0px; }
+.stat-delta{ 
+  display:flex; 
+  align-items:center; 
+  gap:3px; 
+  font-size:11.5px; 
+  font-weight:600; 
+  margin-top:4px;
+}
+.stat-delta.up{ color:var(--green); }
+.stat-delta.down{ color:var(--purple); }
+.stat-delta .vs{ color:var(--muted-light); font-weight:500; margin-left:2px; font-size:10px;}
+.spark{ margin-top:6px; width:100%; height:28px; }
 
-Are bank statements required?
+/* ---- main panels ---- */
+.main-panels{ display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:16px; align-items:start;}
 
-Yes. Used to verify income, obligations, and transaction conduct.
+.card{ 
+  background:var(--card); 
+  border-radius:12px; 
+  padding:18px 20px; 
+  box-shadow:var(--shadow); 
+  border:1px solid var(--border); 
+  margin-bottom:16px;
+}
+.card-head{ 
+  display:flex; 
+  align-items:flex-start; 
+  gap:10px; 
+  margin-bottom:14px;
+}
+.card-icon{ 
+  width:34px; 
+  height:34px; 
+  border-radius:8px; 
+  display:flex; 
+  align-items:center; 
+  justify-content:center; 
+  flex-shrink:0;
+}
+.card-icon svg{ width:16px; height:16px; }
+.card-head h3{ 
+  margin:0; 
+  font-size:15px; 
+  font-weight:700; 
+  color:var(--text);
+}
+.card-head p{ 
+  margin:2px 0 0 0; 
+  font-size:12px; 
+  color:var(--muted);
+}
 
-Are scanned documents accepted?
+.elig-grid{ 
+  display:grid; 
+  grid-template-columns:1.4fr 1fr; 
+  gap:20px; 
+  align-items:center;
+}
+.field{ margin-bottom:12px; }
+.field label{ 
+  display:block; 
+  font-size:11.5px; 
+  font-weight:600; 
+  color:#334155; 
+  margin-bottom:4px;
+}
+.field input, .field select{
+  width:100%; 
+  padding:8px 12px; 
+  border-radius:8px; 
+  border:1px solid var(--border);
+  background:#f8fafc; 
+  font-size:13px; 
+  color:var(--text); 
+  box-sizing:border-box;
+  font-family:inherit;
+}
+.field input::placeholder{ color:var(--muted-light); }
+.check-btn{
+  width:100%; 
+  background:var(--blue); 
+  color:#fff; 
+  border:none; 
+  padding:9px 0;
+  border-radius:8px; 
+  font-weight:700; 
+  font-size:13px; 
+  cursor:pointer;
+  display:flex; 
+  align-items:center; 
+  justify-content:center; 
+  gap:8px; 
+  margin-top:4px;
+}
+.check-btn svg{ width:14px; height:14px; stroke:#fff; }
 
-Accepted for preliminary review. Originals may be requested before disbursement.
+.gauge-wrap{ 
+  display:flex; 
+  flex-direction:column; 
+  align-items:center; 
+  text-align:center; 
+}
+.gauge{ 
+  position:relative; 
+  width:130px; 
+  height:130px; 
+}
+.gauge svg{ width:130px; height:130px; transform:rotate(-90deg); }
+.gauge-value{
+  position:absolute; 
+  top:0; 
+  left:0; 
+  width:100%; 
+  height:100%;
+  display:flex; 
+  flex-direction:column; 
+  align-items:center; 
+  justify-content:center;
+}
+.gauge-value .pct{ 
+  font-size:24px; 
+  font-weight:800; 
+  color:var(--text); 
+}
+.gauge-value .lbl{ 
+  font-size:10px; 
+  color:var(--muted); 
+  margin-top:0px;
+}
+.gauge-chance{ 
+  color:var(--green); 
+  font-weight:700; 
+  font-size:12px; 
+  margin-top:6px;
+}
+.gauge-note{ 
+  color:var(--muted-light); 
+  font-size:10px; 
+  margin-top:2px;
+}
 
-What if documents mismatch?
+/* ---- interest rate snapshot ---- */
+.rates-grid{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 20px;
+  margin-top: 4px;
+}
+.rate-item{
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f4f9;
+}
+.rate-item .label{
+  color: var(--muted);
+}
+.rate-item .value{
+  font-weight: 600;
+  color: var(--text);
+}
 
-Application remains on hold until corrected documents are submitted.
+/* ---- key highlights ---- */
+.highlights{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 4px;
+}
+.highlight-item{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  padding: 4px 0;
+}
+.highlight-item svg{
+  width: 14px;
+  height: 14px;
+  stroke: var(--blue);
+  flex-shrink: 0;
+}
 
-EMI, Rate and Repayment Questions
-How is EMI calculated?
+/* ---- loan process flow ---- */
+.process-flow{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 8px 0;
+}
+.process-step{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  flex: 1;
+}
+.process-step .step-num{
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--blue-light);
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.process-step .step-label{
+  font-size: 9.5px;
+  font-weight: 500;
+}
+.process-arrow{
+  color: var(--muted-light);
+  font-size: 14px;
+}
 
-EMI depends on principal, interest rate, and tenure.
+/* ---- assistant ---- */
+.assistant-input{ 
+  display:flex; 
+  gap:8px; 
+  margin-bottom:12px;
+}
+.assist-input{
+  flex:1; 
+  padding:9px 14px; 
+  border-radius:8px; 
+  border:1px solid var(--border);
+  background:#f8fafc; 
+  font-size:13px; 
+  color:var(--text); 
+  font-family:inherit;
+}
+.assist-input::placeholder{ color:var(--muted-light); }
+.assist-btn{
+  background:var(--purple); 
+  border:none; 
+  width:36px; 
+  height:36px; 
+  border-radius:8px;
+  display:flex; 
+  align-items:center; 
+  justify-content:center; 
+  cursor:pointer; 
+  flex-shrink:0;
+}
+.assist-btn svg{ width:15px; height:15px; stroke:#fff; }
+.pq-label{ 
+  font-size:11px; 
+  font-weight:600; 
+  color:var(--muted); 
+  margin-bottom:8px;
+}
+.chips{ 
+  display:grid; 
+  grid-template-columns:1fr 1fr; 
+  gap:6px;
+}
+.chip{
+  display:flex; 
+  align-items:center; 
+  justify-content:space-between;
+  background:#f8fafc; 
+  border:1px solid var(--border); 
+  border-radius:8px;
+  padding:6px 10px; 
+  font-size:11px; 
+  color:#334155; 
+  font-weight:500;
+}
+.chip svg{ width:11px; height:11px; stroke:var(--muted-light); }
 
-Can rates change?
-Floating rates may change with benchmark rates.
-Fixed rates remain unchanged during the fixed-rate period.
-Can part payment be made?
+/* ---- activity ---- */
+.activity-head{ 
+  display:flex; 
+  justify-content:space-between; 
+  align-items:center; 
+  margin-bottom:4px;
+}
+.activity-head h3{ 
+  margin:0; 
+  font-size:15px; 
+  font-weight:700; 
+  color:var(--text);
+}
+.view-all{ 
+  font-size:11.5px; 
+  color:var(--blue); 
+  font-weight:600; 
+  cursor:pointer;
+}
+.activity{ 
+  list-style:none; 
+  padding-left:0; 
+  margin:4px 0 0 0;
+}
+.activity li{
+  display:flex; 
+  align-items:center; 
+  gap:10px; 
+  padding:8px 0; 
+  border-bottom:1px solid var(--border);
+}
+.activity li:last-child{ border-bottom:none; }
+.act-icon{ 
+  width:28px; 
+  height:28px; 
+  border-radius:50%; 
+  display:flex; 
+  align-items:center; 
+  justify-content:center; 
+  flex-shrink:0;
+}
+.act-icon svg{ width:13px; height:13px; }
+.act-text{ 
+  flex:1; 
+  font-size:12.5px; 
+  color:#334155; 
+}
+.act-time{ 
+  color:var(--muted-light); 
+  font-size:10.5px; 
+  white-space:nowrap;
+}
 
-Yes, subject to loan-specific rules.
+/* ---- faq ---- */
+.faq-item{
+  padding:8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.faq-item:last-child{
+  border-bottom: none;
+}
 
-What if EMI is missed?
+/* ---- footer ---- */
+.footer{
+  text-align: center;
+  padding: 16px 0 4px 0;
+  font-size: 11px;
+  color: var(--muted-light);
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
 
-Late charges may apply and credit score may be impacted.
+@media (max-width: 1100px){
+  .metrics-row, .loan-products{ grid-template-columns:repeat(2,1fr); }
+  .main-panels, .elig-grid{ grid-template-columns:1fr; }
+}
 
-Application Process Questions
-How long does approval take?
-Loan Type	TimelinePersonal Loan	1 to 3 working days
-Vehicle Loan	2 to 5 working days
-Education Loan	5 to 10 working days
-Home Loan	7 to 15 working days
-Can status be tracked?
+@media (max-width: 640px){
+  section[data-testid="stSidebar"] {
+    position:relative !important;
+    width:100% !important;
+    min-width:100% !important;
+    max-width:100% !important;
+    height:auto !important;
+    top:auto; 
+    left:auto;
+  }
+  div[data-testid="stAppViewContainer"] {
+    padding-left: 0 !important;
+  }
+  .metrics-row, .loan-products{ grid-template-columns:1fr; }
+  .welcome-banner{ flex-direction: column; text-align: center; gap: 12px; }
+}
+"""
 
-Yes, using the application reference number.
 
-Can rejected applicants reapply?
+def load_css():
+    st.markdown(f'<style>{CSS}</style>', unsafe_allow_html=True)
 
-Yes, after resolving the rejection reason.
 
-Document 4: Interest Rates and Fees (BFS-LA-004)
-Interest Rate Bands
-Loan Type	Low Risk	Standard Risk	Elevated RiskHome Loan	8.35%-8.90%	8.95%-10.25%	10.30%-11.50%
-Personal Loan	10.75%-12.50%	12.55%-15.50%	15.55%-18.00%
-Education Loan	8.25%-9.50%	9.55%-11.75%	11.80%-13.50%
-Vehicle Loan	8.75%-10.25%	10.30%-12.75%	12.80%-14.50%
-Pricing Factors
-Score above 775: Best pricing
-Score 725-774: Standard pricing
-Score 675-724: Elevated pricing or mitigants
-Delinquency/high obligations: Manual review
-Document 5: Eligibility Criteria (BFS-LA-005)
-Eligibility Matrix
-Loan Type	Age	Minimum Income	Credit ScoreHome Loan	21-70/75	INR 25k-35k	700 Preferred
-Personal Loan	21-60	INR 25k/35k	700 Minimum
-Education Loan	Student 18+	Co-applicant Assessed	Case-Based
-Vehicle Loan	21-65	INR 20k Monthly	675 Preferred
-FOIR Interpretation
-Result	InterpretationWithin Limit	Proceed to further checks
-Slightly Above Limit	Lower amount / longer tenure / co-applicant
-Significantly Above Limit	Normally not recommended
-Document 6: Documentation and KYC Checklist (BFS-LA-006)
-Mandatory KYC Documents
-Identity Proof
-PAN
-Aadhaar
-Passport
-Voter ID
-Address Proof
-Utility Bill
-Aadhaar
-Passport
-Bank Statement
-Income Proof
-Salary Slips
-ITR
-Bank Statements
-Business Documents
-Additional Loan-Specific Documents
-Loan Type	Additional DocumentsHome Loan	Property Papers, Legal Report, Valuation
-Education Loan	Admission Letter, Fee Schedule
-Vehicle Loan	Quotation, Invoice, Insurance
-Personal Loan	Employer Verification
-Document 7: EMI, Repayment and Foreclosure Guide (BFS-LA-007)
-EMI Formula
-EMI=P×r×(1+r)n(1+r)n−1EMI = \frac{P \times r \times (1+r)^n}{(1+r)^n - 1}EMI=(1+r)n−1P×r×(1+r)n​
+def sparkline(points, color):
+    """Render a tiny static SVG sparkline given a list of y-values (0-100)."""
+    w, h, pad = 200, 28, 3
+    n = len(points)
+    step = (w - 2 * pad) / (n - 1)
+    lo, hi = min(points), max(points)
+    rng = (hi - lo) or 1
+    coords = []
+    for i, p in enumerate(points):
+        x = pad + i * step
+        y = pad + (1 - (p - lo) / rng) * (h - 2 * pad)
+        coords.append(f"{x:.1f},{y:.1f}")
+    path = " ".join(coords)
+    area = f"{pad},{h-pad} " + path + f" {w-pad},{h-pad}"
+    return (
+        f'<svg class="spark" viewBox="0 0 {w} {h}" preserveAspectRatio="none">'
+        f'<polyline points="{area}" fill="{color}" opacity="0.10" stroke="none"/>'
+        f'<polyline points="{path}" fill="none" stroke="{color}" stroke-width="2" '
+        f'stroke-linecap="round" stroke-linejoin="round"/>'
+        f'</svg>'
+    )
 
-Where:
 
-P = Principal Amount
-r = Monthly Interest Rate
-n = Number of Instalments
-Sample EMI Reference
-Loan Type	Amount	Rate	Tenure	Approx EMIPersonal Loan	INR 10,00,000	10.50%	60 Months	INR 21,494
-Home Loan	INR 50,00,000	8.75%	240 Months	INR 44,186
-Vehicle Loan	INR 8,00,000	9.50%	84 Months	INR 13,048
-Education Loan	INR 20,00,000	9.25%	180 Months	INR 20,585
-Document 8: Credit Risk and Approval Rules (BFS-LA-008)
-Credit Score Bands
-Score	Risk Grade	Recommendation775+	Low Risk	Best Pricing
-725-774	Standard Risk	Standard Route
-700-724	Moderate Risk	Manual Review
-675-699	Elevated Risk	Additional Mitigants
-Below 675	High Risk	Normally Decline
-Risk Decision Rules
+def sidebar():
+    with st.sidebar:
+        st.markdown(
+            f"<div class='brand'>"
+            f"<div class='brand-icon'>{ICONS['bank']}</div>"
+            f"<div class='brand-text'>LoanAdvisor AI<span class='sub'>Intelligent Banking Assistant</span></div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        rows = "".join(
+            f"<div class='menu-item{' active' if i == 0 else ''}'>{ICONS[icon_name]}<span>{label}</span></div>"
+            for i, (label, icon_name) in enumerate(MENU)
+        )
+        st.markdown(f"<div class='menu'>{rows}</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sidebar-spacer'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='system-status'>{ICONS['shield']}"
+            f"<div><div class='ss-title'>Secure &amp; Compliant</div>"
+            f"<div class='ss-body'>Your data is protected with bank-grade security.</div></div></div>",
+            unsafe_allow_html=True,
+        )
 
-Approve only when:
 
-KYC completed
-Income verified
-Bureau checks completed
-FOIR within limits
-Product conditions satisfied
-Document 9: Loan Application Process and Status (BFS-LA-009)
-End-to-End Application Flow
-Application Submitted
-Document Collection
-Verification
-Credit Assessment
-Sanction
-Documentation
-Disbursement
-Status Definitions
-Status	Meaning	Customer MessageSubmitted	Application Received	Your application has been received.
-Documents Pending	Incomplete Documents	Please upload pending documents.
-Verification in Progress	Data Validation	Verification is under process.
-Credit Review	Eligibility Assessment	Application under credit review.
-Approved	Sanction Available	Please review sanction conditions.
-Rejected	Policy Criteria Not Met	Request reconsideration if applicable.
-Disbursed	Funds Released	Loan amount has been disbursed.
-Service Timelines
-Loan Type	TimelinePersonal Loan	1-3 Working Days
-Vehicle Loan	2-5 Working Days
-Education Loan	5-10 Working Days
-Home Loan	7-15 Working Days
+def header():
+    st.markdown(
+        "<div class='content-header'>"
+        "<div><div class='page-title'>Dashboard <span class='wave'>📊</span></div>"
+        "<div class='subtitle'>Overview of your loan advisory services</div></div>"
+        f"<div class='user-area'>"
+        f"<div class='icon-btn'>{ICONS['bell']}<span class='dot'></span></div>"
+        f"<div class='user-chip'><div class='avatar'>MS</div>"
+        f"<div class='user-meta'><div class='username'>Admin</div><span class='role'>Loan Advisor</span></div>"
+        f"{ICONS['chevron-down']}</div>"
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def welcome_banner():
+    st.markdown(
+        "<div class='welcome-banner'>"
+        "<div><h2>Hello, User! 🎉</h2>"
+        "<p>Welcome to your AI Policy Assistant. I'm here to help you with loan policies, eligibility, rates, documents and more.</p></div>"
+        "<div class='explore-btn'>Explore →</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def loan_products():
+    products = [
+        ("🏠 Home Loan", "₹ 5 Lakh – ₹ 5 Crore", "5 – 30 Years"),
+        ("💳 Personal Loan", "₹ 50,000 – ₹ 40 Lakh", "12 – 84 Months"),
+        ("🎓 Education Loan", "₹ 1 Lakh – ₹ 75 Lakh", "Course + up to 15 Years"),
+        ("🚗 Vehicle Loan", "₹ 1 Lakh – ₹ 1 Crore", "12 – 84 Months"),
+    ]
+    html = "<div class='loan-products'>"
+    for name, amount, tenure in products:
+        html += (
+            f"<div class='loan-card'>"
+            f"<h4>{name}</h4>"
+            f"<div class='amount'>{amount}</div>"
+            f"<div class='tenure'>{tenure}</div>"
+            f"<span class='explore-link'>Explore →</span>"
+            f"</div>"
+        )
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def metrics():
+    cards = [
+        ("users", "#1a5be8", "#e8effd", "Clients Assisted", "1,248", "up", "12.5%", [40, 55, 48, 62, 58, 70, 66, 78, 74, 88]),
+        ("check-circle", "#0f973d", "#e6f7ed", "Loans Approved", "842", "up", "8.3%", [30, 42, 38, 50, 46, 58, 60, 66, 70, 80]),
+        ("clock", "#6c3bd6", "#f0ebff", "Avg. Approval Time", "2.4 days", "down", "1.2 days", [80, 70, 74, 60, 64, 50, 46, 40, 36, 30]),
+        ("badge", "#e8851a", "#fef1e6", "Policy Queries Solved", "968", "up", "15.7%", [35, 44, 40, 52, 48, 60, 64, 72, 78, 90]),
+    ]
+    html = "<div class='metrics-row'>"
+    for icon_name, color, bg, title, value, direction, delta, spark in cards:
+        arrow = "trend-up" if direction == "up" else "trend-down"
+        html += (
+            f"<div class='stat-card'>"
+            f"<div class='stat-top'>"
+            f"<div class='stat-icon' style='background:{bg};color:{color}'>{ICONS[icon_name]}</div>"
+            f"<div><div class='stat-title'>{title}</div><div class='stat-value'>{value}</div></div>"
+            f"</div>"
+            f"<div class='stat-delta {direction}'>{ICONS[arrow]}{delta}<span class='vs'>vs last month</span></div>"
+            f"{sparkline(spark, color)}"
+            f"</div>"
+        )
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def gauge_svg(pct, color="#1a5be8", track="#e5edf9", size=130, stroke=10):
+    r = (size - stroke) / 2
+    c = size / 2
+    circumference = 2 * 3.14159265 * r
+    offset = circumference * (1 - pct / 100)
+    return (
+        f'<svg viewBox="0 0 {size} {size}">'
+        f'<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="{track}" stroke-width="{stroke}"/>'
+        f'<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="{color}" stroke-width="{stroke}" '
+        f'stroke-linecap="round" stroke-dasharray="{circumference:.2f}" '
+        f'stroke-dashoffset="{offset:.2f}"/>'
+        f'</svg>'
+    )
+
+
+def main_panels():
+    st.markdown("<div class='main-panels'>", unsafe_allow_html=True)
+    left, right = st.columns([2, 1], gap="large")
+
+    with left:
+        st.markdown(
+            f"<div class='card'>"
+            f"<div class='card-head'>"
+            f"<div class='card-icon' style='background:#e8effd;color:#1a5be8'>{ICONS['user']}</div>"
+            f"<div><h3>Loan Eligibility Check</h3><p>Check client eligibility in seconds</p></div>"
+            f"</div>"
+            f"<div class='elig-grid'>"
+            f"<div>"
+            f"<div class='field'><label>Client ID / Name</label><input placeholder='Enter Client ID or Name'/></div>"
+            f"<div class='field'><label>Loan Type</label>"
+            f"<select><option>Select Loan Type</option><option>Home Loan</option>"
+            f"<option>Personal Loan</option><option>Business Loan</option><option>Education Loan</option></select></div>"
+            f"<div class='field'><label>Loan Amount (₹)</label><input placeholder='Enter Loan Amount'/></div>"
+            f"<button class='check-btn'>Check Eligibility {ICONS['arrow-right']}</button>"
+            f"</div>"
+            f"<div class='gauge-wrap'>"
+            f"<div class='gauge'>{gauge_svg(83)}"
+            f"<div class='gauge-value'><div class='pct'>83%</div><div class='lbl'>Eligibility Score</div></div>"
+            f"</div>"
+            f"<div class='gauge-chance'>High Chance</div>"
+            f"<div class='gauge-note'>Based on profile &amp; policy rules</div>"
+            f"</div>"
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Interest Rate Snapshot
+        st.markdown(
+            "<div class='card'>"
+            "<div class='card-head'>"
+            f"<div class='card-icon' style='background:#fef1e6;color:#e8851a'>{ICONS['percent']}</div>"
+            "<div><h3>Interest Rate Snapshot</h3><p>Current rates across loan products</p></div>"
+            "</div>"
+            "<div class='rates-grid'>"
+            "<div class='rate-item'><span class='label'>🏠 Home Loan</span><span class='value'>8.35% – 8.90%</span></div>"
+            "<div class='rate-item'><span class='label'>💳 Personal Loan</span><span class='value'>10.75% – 12.50%</span></div>"
+            "<div class='rate-item'><span class='label'>🎓 Education Loan</span><span class='value'>8.25% – 9.50%</span></div>"
+            "<div class='rate-item'><span class='label'>🚗 Vehicle Loan</span><span class='value'>8.75% – 10.25%</span></div>"
+            "</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Key Highlights
+        st.markdown(
+            "<div class='card'>"
+            "<div class='card-head'>"
+            f"<div class='card-icon' style='background:#e6f7ed;color:#0f973d'>{ICONS['check-circle']}</div>"
+            "<div><h3>Key Highlights</h3><p>Why choose our loan services</p></div>"
+            "</div>"
+            "<div class='highlights'>"
+            f"<div class='highlight-item'>{ICONS['check-circle']} Competitive interest rates</div>"
+            f"<div class='highlight-item'>{ICONS['clock']} Quick approval process</div>"
+            f"<div class='highlight-item'>{ICONS['doc']} Minimal documentation</div>"
+            f"<div class='highlight-item'>{ICONS['calendar']} Flexible repayment options</div>"
+            "</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    with right:
+        # AI Policy Assistant
+        chips = [
+            "How is EMI calculated?",
+            "Can I foreclose my loan?",
+            "Can I reapply if rejected?",
+        ]
+        chips_html = "".join(f"<div class='chip'>{c}{ICONS['arrow-right']}</div>" for c in chips)
+        st.markdown(
+            f"<div class='card'>"
+            f"<div class='card-head'>"
+            f"<div class='card-icon' style='background:#f0ebff;color:#6c3bd6'>{ICONS['sparkle']}</div>"
+            f"<div><h3>AI Policy Assistant</h3><p>Ask anything about loan policies</p></div>"
+            f"</div>"
+            f"<div class='assistant-input'>"
+            f"<input class='assist-input' placeholder='Ask about policy, eligibility...'/>"
+            f"<button class='assist-btn'>{ICONS['send']}</button>"
+            f"</div>"
+            f"<div class='pq-label'>Frequently Asked</div>"
+            f"<div class='chips'>{chips_html}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Loan Process Flow
+        steps = ["Application", "Documents", "Verification", "Assessment", "Sanction", "Disbursement"]
+        step_html = "<div class='process-flow'>"
+        for i, step in enumerate(steps, 1):
+            step_html += (
+                f"<div class='process-step'>"
+                f"<div class='step-num'>{i}</div>"
+                f"<div class='step-label'>{step}</div>"
+                f"</div>"
+            )
+            if i < len(steps):
+                step_html += "<span class='process-arrow'>→</span>"
+        step_html += "</div>"
+        
+        st.markdown(
+            "<div class='card'>"
+            "<div class='card-head'>"
+            f"<div class='card-icon' style='background:#e8effd;color:#1a5be8'>{ICONS['clock']}</div>"
+            "<div><h3>Loan Process Flow</h3><p>Track your application journey</p></div>"
+            "</div>"
+            f"{step_html}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        # FAQ
+        faqs = [
+            "How is EMI calculated?",
+            "Can I foreclose my loan?",
+            "Can I reapply if rejected?",
+        ]
+        faq_html = "".join(
+            f"<div class='faq-item'>{faq}{ICONS['chevron-down']}</div>"
+            for faq in faqs
+        )
+        st.markdown(
+            f"<div class='card'>"
+            f"<div class='card-head'>"
+            f"<div class='card-icon' style='background:#fef1e6;color:#e8851a'>{ICONS['sparkle']}</div>"
+            f"<div><h3>Frequently Asked</h3><p>Quick answers to common questions</p></div>"
+            f"</div>"
+            f"{faq_html}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Track Application Status
+        st.markdown(
+            "<div class='card'>"
+            f"<div class='card-head'>"
+            f"<div class='card-icon' style='background:#e6f7ed;color:#0f973d'>{ICONS['check-circle']}</div>"
+            "<div><h3>Track Application Status</h3><p>Real-time updates</p></div>"
+            "</div>"
+            "<div class='field'>"
+            "<label>Application Reference Number</label>"
+            "<input placeholder='Enter reference number'/>"
+            "</div>"
+            "<button class='check-btn' style='background:#6c3bd6;'>Check Status →</button>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def footer():
+    st.markdown(
+        "<div class='footer'>© 2024 Bank. All rights reserved.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def main():
+    load_css()
+    sidebar()
+    header()
+    welcome_banner()
+    loan_products()
+    metrics()
+    main_panels()
+    footer()
+
+
+if __name__ == "__main__":
+    main()
