@@ -1,423 +1,7848 @@
+1 Data Cleaning is the process of identifying and correcting missing values, duplicate records, inconsistent formats, incorrect data types, outliers, and unwanted data to improve data quality before analysis or machine learning. Common steps include handling null values, removing duplicates, standardizing data, fixing data types, treating outliers, and saving the cleaned dataset. 
 
-def node_risk(state: GraphState) -> dict:
-    risk = risk_for_intent(state["intent"]).value
-    route = route_for_intent(state["intent"])
-    logger.info("risk checked: intent=%s risk=%s route=%s", state["intent"], risk, route)
-    return {"risk": risk, "route": route, "current_step": "Risk Checked"}
+Data cleaning is important because raw data often contains errors, missing values, duplicates, inconsistencies, and incorrect formats. If we use such data directly, the analysis or machine learning model may produce incorrect results. 
 
+Step 1: Import Required Libraries 
 
-def node_account(state: GraphState) -> dict:
-    cid = state["customer_id"]
-    if state["intent"] == "balance":
-        account = account_agent.account_summary(cid)
-        response = f"Your available {account['type'].lower()} balance is ₹{account['balance']:,.2f}."
-        return {"agent": "Account Agent", "response": response, "current_step": "Completed"}
-    txns = account_agent.transactions(cid)
-    return {"agent": "Account Agent", "response": txns, "current_step": "Completed", "context": {"last_transactions": txns}}
+import pandas as pd                                     Used for data manipulation. 
 
+import numpy as np                                      Used for numerical operations. 
 
-def node_loan(state: GraphState) -> dict:
-    loan = loan_agent.loan_summary(state["customer_id"])
-    if not loan or loan.get("loan_type") == "No active loan":
-        response = "You don't have an active loan on this account."
-    else:
-        response = f"Your {loan['loan_type']} EMI is ₹{loan['emi']:,}, due {loan['next_due']}. {loan['remaining']} instalments remain."
-    return {"agent": "Loan Agent", "response": response, "current_step": "Completed"}
+Step 2: Load Dataset 
 
+df = pd.read_csv("data.csv")                          Reads the CSV file into a DataFrame. 
 
-def node_rag(state: GraphState) -> dict:
-    result = rag_agent.answer(state["message"])
-    logger.info(
-        "rag retrieval: confidence=%.3f route=%s groq_used=%s",
-        result.get("confidence") or 0.0, result.get("route"), result.get("route") == "RAG Agent",
-    )
-    return {
-        "agent": "RAG Agent",
-        "response": result["answer"],
-        "rag_confidence": result.get("confidence"),
-        "current_step": "Escalated" if result.get("conflict") else "Completed",
-    }
+Step 3: View Basic Information 
 
+print(df.head())                                                   Shows first 5 rows. 
 
-def node_card(state: GraphState) -> dict:
-    cid = state["customer_id"]
-    if state["intent"] == "cards":
-        return {"agent": "Card Agent", "response": card_agent.cards(cid), "current_step": "Completed"}
+print(df.info())                                                     Displays column names, data types, and null values. 
 
-    last4 = extract_last4(state["message"])
+print(df.describe())                                             statistical summary of numerical data. 
 
-    if state["intent"] == "card_active_check":
-        if not last4:
-            return {"agent": "Card Agent", "response": "Which card would you like to check? Please share the last 4 digits.", "current_step": "Awaiting Card Number"}
-        card = card_agent.lookup(cid, last4)
-        if not card:
-            return {"agent": "Card Agent", "response": f"I couldn't find a card ending {last4} on your account.", "current_step": "Card Not Found"}
-        if card["status"] == "ACTIVE":
-            response = f"Yes. Your card ending {last4} is currently active."
-        else:
-            response = f"No. Your card ending {last4} is currently {card['status'].lower()}."
-        return {"agent": "Card Agent", "response": response, "current_step": "Completed"}
+Step 4: Check Missing Values 
 
-    result = card_agent.handle(cid, state["intent"], last4)
-    return {
-        "agent": "Card Agent",
-        "response": result["response"],
-        "current_step": result["current_step"],
-        "agent_result": result,
-        "ownership": result.get("ownership", "N/A"),
-        "authorization": result.get("authorization", "N/A"),
-    }
+print(df.isnull().sum())                                      Counts missing values in each column. 
 
+Step 5: Handle Missing Values 
 
-def node_dispute_investigate(state: GraphState) -> dict:
-    cid = state["customer_id"]
-    message = state["message"]
-    amount = extract_amount(message)
-    issue = classify_dispute_issue(message)
+A. Remove Missing Values 
 
-    if amount is not None:
-        result = dispute_agent.lookup(cid, amount)
-        matches = result["matches"]
-        if not matches:
-            # A legitimate "I see a debit I can't find on my statement"
-            # report — never fabricate a transaction to attach it to, but
-            # also never silently reject it. This is exactly the scenario
-            # the dispute process exists for; it proceeds after an explicit
-            # confirmation, same as any other dispute. Recent/unrelated
-            # transactions are never shown here — an explicit amount means
-            # only an exact match (or no match) is relevant.
-            last4 = extract_last4(message)
-            card_label = f"****{last4}" if last4 else None
-            txn_label = "ATM transaction" if issue == ISSUE_ATM_CASH else "transaction"
-            response = (
-                f"I can help you report this as an unrecognized/failed-transaction case. "
-                f"I couldn't find a matching ₹{amount:,.0f} {txn_label} in your current transaction records.\n\n"
-                "Would you like to raise a dispute for this debit?"
-            )
-            debug_fields = {
-                "agent": "Dispute Agent",
-                "response": response,
-                "current_step": "Awaiting Confirmation",
-                "risk": "HIGH",
-                "route": "Dispute Agent",
-                "ownership": "PASSED",
-                "authorization": "PASSED",
-                "transaction_match": "NOT_FOUND",
-                "amount": amount,
-                "confirmation": "REQUIRED",
-                "agent_result": {
-                    "no_match_dispute": True,
-                    "amount": amount,
-                    "card_last4": last4,
-                    "issue": issue,
-                },
-            }
-            if card_label:
-                debug_fields["card"] = card_label
-            return debug_fields
-    else:
-        # No amount stated (e.g. "I was charged twice", "the transaction
-        # failed but money was deducted") — offer the customer's recent
-        # transactions as candidates instead of refusing outright.
-        matches = account_agent.transactions(cid)
-        if not matches:
-            return {"agent": "Dispute Agent", "response": "I couldn't find any transactions on your account to dispute.", "current_step": "No Match"}
+df.dropna(inplace=True)                                 Deletes rows containing null values. 
 
-    if len(matches) > 1:
-        listing = "\n".join(f"- {t['merchant']} · ₹{t['amount']:,} · {t['date']} · {t['id']}" for t in matches)
-        return {
-            "agent": "Dispute Agent",
-            "response": f"I found multiple matching transactions:\n\n{listing}\n\nPlease reply with the transaction ID.",
-            "current_step": "Multiple Matches",
-            "agent_result": {"candidates": matches},
-        }
+B. Fill Missing Value 
 
-    txn = matches[0]
-    existing = dispute_agent.by_transaction(cid, txn["id"])
-    if existing:
-        return {"agent": "Dispute Agent", "response": f"This transaction already has an open dispute: {existing['id']} ({existing['status']}).", "current_step": "Already Disputed"}
+df["Age"].fillna(df["Age"].mean(), inplace=True)         Replaces missing Age values with the average age. 
 
-    return {
-        "agent": "Dispute Agent",
-        "response": f"I found one matching transaction:\n\n{txn['merchant']} · ₹{txn['amount']:,} · {txn['date']} · {txn['status']}\nTransaction ID: {txn['id']}\n\nWhat seems to be wrong with this transaction?",
-        "current_step": "Awaiting Issue Type",
-        "agent_result": {"transaction": txn},
-    }
+Step 6: Check Duplicate Records 
 
+print(df.duplicated().sum())                                           Finds the number of duplicate rows. 
 
-def node_dispute_status(state: GraphState) -> dict:
-    disputes = dispute_agent.status(state["customer_id"])
-    response = disputes if disputes else "I couldn't find an open dispute for your account."
-    return {"agent": "Dispute Agent", "response": response, "current_step": "Completed"}
+ 
 
+Step 7: Remove Duplicates 
 
-def node_complaint(state: GraphState) -> dict:
-    return {
-        "agent": "Complaint Agent",
-        "response": "I can help file a complaint. Please describe the issue in your next message.",
-        "current_step": "Awaiting Description",
-    }
+df.drop_duplicates(inplace=True)                                   Removes repeated records. 
 
+Step 8: Check Data Types 
 
-def node_fallback(state: GraphState) -> dict:
-    intent = state["intent"]
-    if intent == "money_transfer":
-        response = "I can't perform money transfers through this assistant. Please use the bank's secure banking channel."
-        step = "Refused - Irreversible Action"
-    elif intent == "change_pin":
-        response = "I can't change your PIN through this assistant. Please use the bank's secure banking channel."
-        step = "Refused - Irreversible Action"
-    else:
-        response = "I can help with banking-related questions such as accounts, transactions, cards, loans and disputes. Could you rephrase your question, or contact a bank representative for further help?"
-        step = "Unrouted"
-        intent = "out_of_scope"
-    return {"agent": "Fallback / Escalation", "response": response, "current_step": step, "intent": intent}
+print(df.dtypes                                                               Displays data type of each column. 
 
+Step 9: Convert Data Type 
 
-def node_guardrails(state: GraphState) -> dict:
-    response = state.get("response")
-    if response in (None, ""):
-        response = "I couldn't safely process that request. Please contact a bank representative."
-    return {"response": response, "guardrail": "PASSED"}
+df["Age"] = df["Age"].astype(int)                            Converts Age column to integer type. 
 
+Step 10: Rename Column Names 
 
-def route_decision(state: GraphState) -> str:
-    route = state["route"]
-    if route == "Dispute Agent":
-        return "dispute_status" if state["intent"] == "dispute_status" else "dispute_investigate"
-    return {
-        "Account Agent": "account",
-        "Loan Agent": "loan",
-        "RAG Agent": "rag",
-        "Card Agent": "card",
-        "Complaint Agent": "complaint",
-    }.get(route, "fallback")
+df.rename(columns={"Emp_Name": "Employee_Name"}, inplace=True) 
 
+ Changes column names for better readability. 
 
-def _build_graph():
-    graph = StateGraph(GraphState)
-    graph.add_node("classify", node_classify)
-    graph.add_node("risk", node_risk)
-    graph.add_node("account", node_account)
-    graph.add_node("loan", node_loan)
-    graph.add_node("rag", node_rag)
-    graph.add_node("card", node_card)
-    graph.add_node("dispute_investigate", node_dispute_investigate)
-    graph.add_node("dispute_status", node_dispute_status)
-    graph.add_node("complaint", node_complaint)
-    graph.add_node("fallback", node_fallback)
-    graph.add_node("guardrails", node_guardrails)
+Step 11: Remove Extra Spaces 
 
-    graph.add_edge(START, "classify")
-    graph.add_edge("classify", "risk")
-    graph.add_conditional_edges("risk", route_decision, {
-        "account": "account",
-        "loan": "loan",
-        "rag": "rag",
-        "card": "card",
-        "dispute_investigate": "dispute_investigate",
-        "dispute_status": "dispute_status",
-        "complaint": "complaint",
-        "fallback": "fallback",
-    })
-    for leaf in ["account", "loan", "rag", "card", "dispute_investigate", "dispute_status", "complaint", "fallback"]:
-        graph.add_edge(leaf, "guardrails")
-    graph.add_edge("guardrails", END)
-    return graph.compile()
+df["Employee_Name"] = df["Employee_Name"].str.strip()   Removes leading and trailing spaces. 
 
+Step 12: Standardize Text Values 
 
-_compiled = _build_graph()
+df["City"] = df["City"].str.upper()               Converts city names to uppercase for consistency. 
 
+Step 13: Find Outliers 
 
-def _run_classified(message: str, customer_id: str, context: dict | None = None) -> dict:
-    """Fresh classify → risk → agent run (no pending workflow in progress).
+Q1 = df["Salary"].quantile(0.25) 
 
-    Before classifying, check whether this message is a deterministic
-    follow-up about transactions we already showed this conversation
-    ("which one was the biggest?") — answered from structured context, not
-    by re-classifying or asking an LLM.
-    """
-    followup = account_agent.answer_transaction_followup(message, context)
-    if followup:
-        response, new_context = followup
-        return {
-            "agent": "Account Agent",
-            "response": response,
-            "current_step": "Completed",
-            "intent": "transaction_followup",
-            "risk": Risk.READ.value,
-            "route": "Account Agent",
-            "guardrail": "PASSED",
-            "context": new_context,
-        }
-    state: GraphState = {"message": message, "customer_id": customer_id, "context": context or {}}
-    result = _compiled.invoke(state)
-    return dict(result)
+Q3 = df["Salary"].quantile(0.75) 
 
+IQR = Q3 - Q1 
 
-def _handle_pending(message: str, customer_id: str, pending: dict, context: dict | None = None) -> dict:
-    """Continuations of a multi-turn action (card number, dispute issue,
-    complaint description, picking among multiple transaction matches).
+  
 
-    These are UI navigation steps, not a fresh intent to classify — banking
-    state itself still lives in the mock banking API / SQLite, never in
-    chat history. However, a message that clearly represents a brand new,
-    high-risk intent (e.g. "Transfer ₹50,000 to Rahul" while a complaint
-    description was pending) must be allowed to interrupt and route fresh
-    instead of being swallowed as the pending workflow's answer.
-    """
-    ptype = pending.get("type")
+outliers = df[(df["Salary"] < (Q1 - 1.5 * IQR)) | 
 
-    if ptype == "card_last4":
-        intent = pending.get("intent", "block_card")
-        # A reply here is only "the card number" if it doesn't itself look
-        # like a brand new request. Checking this before (not only when)
-        # last4 extraction fails means a message like "unauthorized
-        # transaction on card 4321" — which *does* contain a 4-digit
-        # number — still interrupts instead of being swallowed as this
-        # pending card-number answer.
-        new_intent = classify_intent(message)
-        if new_intent not in ("fallback", intent):
-            return _run_classified(message, customer_id, context)
-        last4 = extract_last4(message)
-        if not last4:
-            return {"response": "I didn't catch the card number. Please share the last 4 digits.", "current_step": "Awaiting Card Number", "agent": "Card Agent", "route": "Card Agent", "risk": risk_for_intent(intent).value, "intent": intent}
-        result = card_agent.handle(customer_id, intent, last4)
-        if pending.get("amount"):
-            result["carry_amount"] = pending["amount"]
-        return {
-            "response": result["response"],
-            "current_step": result["current_step"],
-            "agent": "Card Agent",
-            "route": "Card Agent",
-            "risk": risk_for_intent(intent).value,
-            "agent_result": result,
-            "intent": intent,
-            "ownership": result.get("ownership", "N/A"),
-            "authorization": result.get("authorization", "N/A"),
-        }
+(df["Salary"] > (Q3 + 1.5 * IQR))] 
 
-    if ptype == "dispute_pick":
-        candidates = pending.get("candidates", [])
-        tid = extract_transaction_id(message)
-        txn = next((t for t in candidates if t["id"] == tid), None)
-        if not txn:
-            if classify_intent(message) != "fallback":
-                return _run_classified(message, customer_id, context)
-            return {"response": "I couldn't match that to one of the transactions listed. Please reply with the exact transaction ID.", "current_step": "Multiple Matches", "agent": "Dispute Agent", "route": "Dispute Agent", "risk": risk_for_intent("dispute_status").value, "agent_result": {"candidates": candidates}}
-        existing = dispute_agent.by_transaction(customer_id, txn["id"])
-        if existing:
-            return {"response": f"This transaction already has an open dispute: {existing['id']} ({existing['status']}).", "current_step": "Already Disputed", "agent": "Dispute Agent", "route": "Dispute Agent", "risk": risk_for_intent("dispute_status").value}
-        return {"response": f"Transaction ID: {txn['id']}\n\nWhat seems to be wrong with this transaction?", "current_step": "Awaiting Issue Type", "agent": "Dispute Agent", "route": "Dispute Agent", "risk": risk_for_intent("dispute_status").value, "agent_result": {"transaction": txn}}
+print(outliers) 
+Uses the IQR method to identify unusual values. 
 
-    if ptype == "dispute_issue":
-        if classify_intent(message) in INTERRUPT_INTENTS:
-            return _run_classified(message, customer_id, context)
-        txn = pending["transaction"]
-        return {
-            "response": f"Please confirm: raise a dispute for {txn['merchant']} · ₹{txn['amount']:,} · {txn['id']}\nIssue: {message}",
-            "current_step": "Awaiting Confirmation",
-            "agent": "Dispute Agent",
-            "route": "Dispute Agent",
-            "risk": risk_for_intent("raise_dispute").value,
-            "agent_result": {"transaction": txn, "issue": message},
-        }
+Step 14: Remove Outliers 
 
-    if ptype == "complaint_description":
-        if classify_intent(message) in INTERRUPT_INTENTS:
-            return _run_classified(message, customer_id, context)
-        return {
-            "response": f"Please confirm: file a complaint with description:\n\n\"{message}\"",
-            "current_step": "Awaiting Confirmation",
-            "agent": "Complaint Agent",
-            "route": "Complaint Agent",
-            "risk": risk_for_intent("raise_complaint").value,
-            "agent_result": {"description": message},
-        }
+df = df[(df["Salary"] >= (Q1 - 1.5 * IQR)) &  (df["Salary"] <= (Q3 + 1.5 * IQR))]  Keeps only valid salary values. 
 
-    return {"response": "Something went wrong tracking this conversation step. Please start over.", "current_step": "Error"}
+Step 15: Handle Inconsistent Data 
 
+df["Gender"] = df["Gender"].replace({"M": "Male","F": "Female"})                            Standardizes gender values. 
 
-def run_graph(message: str, customer_id: str, pending: dict | None = None, context: dict | None = None) -> dict:
-    if pending:
-        return _handle_pending(message, customer_id, pending, context)
-    return _run_classified(message, customer_id, context)
+Step 16: Check Unique Values 
 
+print(df["Department"].unique())           Displays all unique department names. 
 
-# Friendly, intent-specific sign-in nudges for a public (unauthenticated)
-# visitor who asks for something that requires a session. Anything not
-# listed here gets a generic nudge.
-SIGN_IN_NUDGES = {
-    "balance": "I can check your account balance, but you'll need to sign in first.",
-    "transactions": "I can show your transactions, but you'll need to sign in first.",
-    "cards": "I can show your cards, but you'll need to sign in first.",
-    "card_active_check": "I can check your card status, but you'll need to sign in first.",
-    "block_card": "I can block your card, but you'll need to sign in first.",
-    "unblock_card": "I can unblock your card, but you'll need to sign in first.",
-    "card_lost_stolen": "I can help block a lost or stolen card, but you'll need to sign in first.",
-    "loan": "I can show your loan/EMI details, but you'll need to sign in first.",
-    "dispute_status": "I can show your disputes, but you'll need to sign in first.",
-    "transaction_investigation": "I can help raise a dispute, but you'll need to sign in first.",
-    "raise_complaint": "I can help file a complaint, but you'll need to sign in first.",
-}
+Step 17: Change Date Format 
 
+df["Joining_Date"] = pd.to_datetime(df["Joining_Date"])       Converts string dates into datetime format. 
 
-def run_public_graph(message: str) -> dict:
-    """Unauthenticated entry point: only READ/RAG policy questions are ever
-    answered without a session. Everything else — even a READ-tier intent
-    like 'balance' that reads personal data — gets a natural sign-in nudge
-    instead of a routing error. The LLM never decides this; it's a plain
-    lookup against the same deterministic risk/route tables used for
-    authenticated chat."""
-    intent = classify_intent(message)
-    if intent == "fallback":
-        from llm.groq_client import classify_intent_llm
-        llm_intent = classify_intent_llm(message)
-        if llm_intent:
-            intent = llm_intent
+Step 18: Remove Unnecessary Columns 
 
-    risk = risk_for_intent(intent).value
-    route = route_for_intent(intent)
+df.drop(columns=["Temp_Column"], inplace=True)        Removes irrelevant columns. 
 
-    if route == "RAG Agent":
-        result = rag_agent.answer(message)
-        return {
-            "access": "PUBLIC",
-            "authentication": "NOT_REQUIRED",
-            "intent": "POLICY_QUERY",
-            "risk": Risk.READ.value,
-            "agent": "RAG Agent",
-            "route": route,
-            "response": result["answer"],
-            "rag_confidence": result.get("confidence"),
-            "rag_threshold": get_settings().rag_threshold,
-            "rag_source": result.get("source"),
-            "groq": "USED" if result.get("route") == "RAG Agent" else "NOT CALLED",
-            "current_step": "Escalated" if result.get("conflict") else "Completed",
-        }
+Step 19: Reset Index 
 
-    if intent in ("money_transfer", "change_pin", "fallback"):
-        fallback = node_fallback({"intent": intent})
-        return {
-            "access": "PUBLIC",
-            "authentication": "NOT_REQUIRED",
-            "intent": fallback["intent"],
-            "risk": risk,
-            "agent": "Fallback / Escalation",
-            "route": "Fallback / Escalation",
-            "response": fallback["response"],
-            "current_step": fallback["current_step"],
-        }
+df.reset_index(drop=True, inplace=True)        Creates a new sequential index after cleaning. 
 
-    nudge = SIGN_IN_NUDGES.get(intent, "I'll need you to sign in before I can help with that — it involves your personal account information.")
-    return {
-        "access": "PUBLIC",
-        "authentication": "NOT_REQUIRED",
-        "intent": intent,
-        "risk": risk,
-        "agent": route,
-        "route": route,
-        "response": nudge,
-        "requires_auth": True,
-        "current_step": "Sign-In Required",
-    }
+ 
+
+Step 20: Save Cleaned Dataset 
+
+df.to_csv("cleaned_data.csv", index=False)               Stores the cleaned data into a new CSV file. 
+
+ 
+
+ 
+
+2.Parsing is the process of reading data from different sources such as CSV, Excel, JSON, APIs, XML, and databases and converting it into a structured format like a Pandas DataFrame. We parallelize parsing when multiple independent sources need to be processed. Using ThreadPoolExecutor for files or Asyncio for APIs allows multiple parsing tasks to run simultaneously, reducing overall execution time, improving resource utilization, and making ETL pipelines faster and more scalable. 
+
+ 
+
+1. Parsing CSV Files 
+
+df = pd.read_csv("employees.csv") 
+
+print(df.head()) 
+
+Reads data from a CSV file. 
+
+Converts rows and columns into a DataFrame. 
+
+ 
+
+2. Parsing Excel Files 
+
+df = pd.read_excel("employees.xlsx") 
+
+print(df.head()) 
+
+Reads data from Excel files. 
+
+Commonly used in business reporting. 
+
+ 
+
+3. Parsing JSON Files 
+
+df = pd.read_json("employees.json") 
+
+print(df.head()) 
+
+Reads JSON data. 
+
+Converts JSON objects into a tabular structure. 
+
+ 
+
+4. Parsing API Data 
+
+import requests 
+
+import pandas as pd 
+
+response = requests.get( 
+
+"https://jsonplaceholder.typicode.com/users" 
+
+) 
+
+data = response.json() 
+
+df = pd.DataFrame(data) 
+
+print(df.head()) 
+
+Sends a request to an API. 
+
+Receives JSON response. 
+
+Converts JSON to DataFrame. 
+
+ 
+
+5. Parsing XML Files 
+
+import xml.etree.ElementTree as ET 
+
+tree = ET.parse("employees.xml") 
+
+root = tree.getroot() 
+
+for employee in root: 
+
+print(employee.find("name").text) 
+
+Reads XML data. 
+
+Extracts data from XML tags. 
+
+ 
+
+6. Parsing Text Files 
+
+with open("data.txt", "r") as file: 
+
+lines = file.readlines() 
+
+  
+
+for line in lines: 
+
+print(line.strip()) 
+
+Reads text file line by line. 
+
+Useful for logs and unstructured text. 
+
+ 
+
+7. Parsing Database Data 
+
+import sqlite3 
+
+import pandas as pd 
+
+conn = sqlite3.connect("company.db") 
+
+df = pd.read_sql( 
+
+"SELECT * FROM employees", 
+
+conn 
+
+) 
+
+  
+
+print(df.head()) 
+
+Connects to a database. 
+
+Executes SQL query. 
+
+Loads results into DataFrame. 
+
+ 
+
+Parsing Multiple Sources Sequentially 
+
+import pandas as pd 
+
+csv_df = pd.read_csv("employees.csv") 
+
+excel_df = pd.read_excel("employees.xlsx") 
+
+json_df = pd.read_json("employees.json") 
+
+final_df = pd.concat( 
+
+[csv_df, excel_df, json_df], 
+
+ignore_index=True 
+
+) 
+
+print(final_df.head()) 
+
+First CSV is loaded. 
+
+Then Excel is loaded. 
+
+Then JSON is loaded. 
+
+Total time = sum of all processing times. 
+
+ 
+
+Why Parallelize Parsing? 
+
+Assume: 
+
+CSV File = 5 seconds  Excel File = 5 seconds  JSON File = 5 seconds API Data = 5 seconds 
+
+Sequential Processing: 
+
+CSV -> 5 sec  Excel -> 5 sec  JSON -> 5 sec API -> 5 sec 
+
+Total = 20 sec 
+
+Parallel Processing: 
+
+CSV \ 
+
+Excel \ 
+
+JSON ---> Run Together 
+
+API / 
+
+  
+
+Total ≈ 5 sec 
+
+Parallel Parsing Using ThreadPoolExecutor 
+
+import pandas as pd 
+
+from concurrent.futures import ThreadPoolExecutor  
+
+def read_csv_file(): 
+
+return pd.read_csv("employees.csv") 
+
+def read_excel_file(): 
+
+return pd.read_excel("employees.xlsx") 
+
+def read_json_file(): 
+
+return pd.read_json("employees.json") 
+
+with ThreadPoolExecutor() as executor: 
+
+csv_future = executor.submit(read_csv_file) 
+
+excel_future = executor.submit(read_excel_file) 
+
+json_future = executor.submit(read_json_file) 
+
+csv_df = csv_future.result() 
+
+excel_df = excel_future.result() 
+
+json_df = json_future.result() 
+
+final_df = pd.concat( 
+
+[csv_df, excel_df, json_df], 
+
+ignore_index=True 
+
+) 
+
+print(final_df.head()) 
+
+Multiple files are parsed simultaneously. 
+
+No need to wait for one file to finish before starting another. 
+
+Reduces overall execution time. 
+
+ 
+
+Parallel API Parsing Using Asyncio 
+
+import asyncio 
+
+import aiohttp 
+
+async def fetch(session, url): 
+
+async with session.get(url) as response: 
+
+return await response.json() 
+
+async def main(): 
+
+urls = [ 
+
+"https://api1.com", 
+
+"https://api2.com", 
+
+"https://api3.com" 
+
+] 
+
+async with aiohttp.ClientSession() as session: 
+
+tasks = [ 
+
+fetch(session, url) 
+
+for url in urls 
+
+]  
+
+results = await asyncio.gather(*tasks) 
+
+ return results 
+
+results = asyncio.run(main()) 
+
+ print(results) 
+
+Sends multiple API requests simultaneously. 
+
+Does not wait for one API response before calling the next. 
+
+Best for I/O-bound tasks such as APIs. 
+
+ 
+
+Why We Parallelize Parsing? 
+
+Faster Execution    Multiple files or APIs are processed simultaneously. 
+
+Better Resource Utilization      CPU and I/O resources are used efficiently. 
+
+Reduced Waiting Time    One slow source does not block others. 
+
+Faster ETL Pipelines    Extract phase becomes faster. 
+
+Improved Scalability     Can process many files and APIs together. 
+
+ 
+
+3.chunking 
+
+1. Fixed Size Chunking 
+
+Concept 
+
+Split text into equal-sized chunks based on characters or tokens. 
+
+Code 
+
+def fixed_size_chunk(text, chunk_size=100): 
+
+chunks = [] 
+
+  
+
+for i in range(0, len(text), chunk_size): 
+
+chunks.append(text[i:i + chunk_size]) 
+
+  
+
+return chunks 
+
+  
+
+  
+
+text = """Artificial Intelligence is transforming industries. 
+
+Machine Learning is a subset of AI. 
+
+Deep Learning is a subset of Machine Learning.""" 
+
+  
+
+chunks = fixed_size_chunk(text, 50) 
+
+  
+
+for chunk in chunks: 
+
+print(chunk) 
+
+Show more lines 
+
+Output 
+
+Plain Text 
+
+Artificial Intelligence is transforming industrie 
+
+s. Machine Learning is a subset of AI. 
+
+Deep Learning is a subset of Machine Learning. 
+
+` 
+
+Show more lines 
+
+Best Use Case 
+
+✅ Large documents 
+
+✅ Fast processing 
+
+✅ Simple implementation 
+
+Example 
+
+Books 
+
+Research papers 
+
+Large PDFs 
+
+Limitation 
+
+❌ Can break sentences in the middle. 
+
+ 
+
+2. Fixed Size Chunking with Overlap 
+
+Concept 
+
+Keep some words from previous chunk in next chunk. 
+
+Code 
+
+Python 
+
+def overlap_chunk(text, chunk_size=100, overlap=20): 
+
+chunks = [] 
+
+  
+
+start = 0 
+
+  
+
+while start < len(text): 
+
+end = start + chunk_size 
+
+chunks.append(text[start:end]) 
+
+start += chunk_size - overlap 
+
+  
+
+return chunks 
+
+  
+
+  
+
+chunks = overlap_chunk(text, 50, 10) 
+
+  
+
+for chunk in chunks: 
+
+print(chunk) 
+
+Show more lines 
+
+Example 
+
+Chunk 1 
+
+Plain Text 
+
+Artificial Intelligence is transforming industries 
+
+Show more lines 
+
+Chunk 2 
+
+Plain Text 
+
+transforming industries. Machine Learning is... 
+
+Show more lines 
+
+Best Use Case 
+
+✅ RAG systems 
+
+✅ LLM applications 
+
+✅ Semantic Search 
+
+Why 
+
+Context is preserved between chunks. 
+
+ 
+
+3. Sentence Based Chunking 
+
+Concept 
+
+Split document using sentences. 
+
+Code 
+
+Python 
+
+import re 
+
+  
+
+def sentence_chunk(text): 
+
+return re.split(r'(?<=[.!?])\s+', text) 
+
+  
+
+  
+
+chunks = sentence_chunk(text) 
+
+  
+
+for chunk in chunks: 
+
+print(chunk) 
+
+Show more lines 
+
+Output 
+
+Plain Text 
+
+Artificial Intelligence is transforming industries. 
+
+Machine Learning is a subset of AI. 
+
+Deep Learning is a subset of Machine Learning. 
+
+Show more lines 
+
+Best Use Case 
+
+✅ FAQ documents 
+
+✅ Chatbots 
+
+✅ Knowledge bases 
+
+Advantage 
+
+No sentence gets cut. 
+
+ 
+
+4. Paragraph Based Chunking 
+
+Concept 
+
+Split using paragraph boundaries. 
+
+Code 
+
+Python 
+
+def paragraph_chunk(text): 
+
+return text.split("\n\n") 
+
+  
+
+  
+
+text = """ 
+
+AI is transforming industries. 
+
+  
+
+Machine Learning helps systems learn from data. 
+
+  
+
+Deep Learning uses neural networks. 
+
+""" 
+
+  
+
+chunks = paragraph_chunk(text) 
+
+  
+
+for chunk in chunks: 
+
+print(chunk) 
+
+Show more lines 
+
+Best Use Case 
+
+✅ Blogs 
+
+✅ Articles 
+
+✅ Reports 
+
+✅ Documentation 
+
+Advantage 
+
+Keeps related information together. 
+
+ 
+
+5. Recursive Chunking (Most Popular in LangChain) 
+
+Concept 
+
+Try splitting by: 
+
+Paragraph 
+
+Sentence 
+
+Word 
+
+Character 
+
+until chunk size is reached. 
+
+Code 
+
+Python 
+
+from langchain.text_splitter import RecursiveCharacterTextSplitter 
+
+  
+
+text = open("document.txt").read() 
+
+  
+
+splitter = RecursiveCharacterTextSplitter( 
+
+chunk_size=500, 
+
+chunk_overlap=50 
+
+) 
+
+  
+
+chunks = splitter.split_text(text) 
+
+  
+
+print(chunks[:3]) 
+
+Show more lines 
+
+Best Use Case 
+
+✅ Production RAG 
+
+✅ Enterprise Search 
+
+✅ PDF QA Systems 
+
+✅ Banking Chatbots 
+
+Why Popular? 
+
+Maintains maximum context while respecting chunk size. 
+
+ 
+
+6. Token Based Chunking 
+
+Concept 
+
+Split based on token count rather than characters. 
+
+Code 
+
+Python 
+
+import tiktoken 
+
+  
+
+encoding = tiktoken.get_encoding("cl100k_base") 
+
+  
+
+def token_chunk(text, max_tokens=50): 
+
+  
+
+tokens = encoding.encode(text) 
+
+  
+
+chunks = [] 
+
+  
+
+for i in range(0, len(tokens), max_tokens): 
+
+chunk_tokens = tokens[i:i + max_tokens] 
+
+chunks.append(encoding.decode(chunk_tokens)) 
+
+  
+
+return chunks 
+
+  
+
+Show more lines 
+
+Best Use Case 
+
+✅ OpenAI Models 
+
+✅ GPT Models 
+
+✅ Azure OpenAI 
+
+Why 
+
+LLMs process tokens, not characters. 
+
+ 
+
+7. Semantic Chunking 
+
+Concept 
+
+Split based on meaning instead of size. 
+
+Example 
+
+Document: 
+
+Plain Text 
+
+AI is transforming healthcare. 
+
+Doctors use AI for diagnosis. 
+
+  
+
+Python is a programming language. 
+
+It is used for web development. 
+
+Show more lines 
+
+Chunks: 
+
+Plain Text 
+
+Chunk 1: 
+
+AI is transforming healthcare. 
+
+Doctors use AI for diagnosis. 
+
+Show more lines 
+
+Plain Text 
+
+Chunk 2: 
+
+Python is a programming language. 
+
+It is used for web development. 
+
+Show more lines 
+
+Code 
+
+Python 
+
+from langchain_experimental.text_splitter import SemanticChunker 
+
+from langchain_openai import OpenAIEmbeddings 
+
+  
+
+embeddings = OpenAIEmbeddings() 
+
+  
+
+splitter = SemanticChunker(embeddings) 
+
+  
+
+chunks = splitter.split_text(text) 
+
+  
+
+print(chunks) 
+
+Show more lines 
+
+Best Use Case 
+
+✅ High-quality RAG 
+
+✅ Question Answering 
+
+✅ Knowledge Management 
+
+Advantage 
+
+Best retrieval accuracy. 
+
+Limitation 
+
+More expensive because embeddings are required. 
+
+ 
+
+8. Document Structure Chunking 
+
+Concept 
+
+Chunk using headings. 
+
+Example 
+
+Plain Text 
+
+# Introduction 
+
+AI Overview 
+
+  
+
+# Machine Learning 
+
+ML Concepts 
+
+  
+
+# Deep Learning 
+
+DL Concepts 
+
+Show more lines 
+
+Chunks become: 
+
+Plain Text 
+
+Chunk 1 → Introduction 
+
+Chunk 2 → Machine Learning 
+
+Chunk 3 → Deep Learning 
+
+Show more lines 
+
+Code 
+
+Python 
+
+def heading_chunk(text): 
+
+  
+
+sections = text.split("# ") 
+
+  
+
+chunks = [] 
+
+  
+
+for section in sections: 
+
+if section.strip(): 
+
+chunks.append(section) 
+
+  
+
+return chunks 
+
+Show more lines 
+
+Best Use Case 
+
+✅ Manuals 
+
+✅ Technical Documentation 
+
+✅ Policy Documents 
+
+✅ Banking Documents 
+
+ 
+
+9. Sliding Window Chunking 
+
+Concept 
+
+Move window gradually over text. 
+
+Code 
+
+Python 
+
+def sliding_window(words, window_size=10, step=5): 
+
+  
+
+chunks = [] 
+
+  
+
+for i in range(0, len(words), step): 
+
+chunks.append(words[i:i + window_size]) 
+
+  
+
+return chunks 
+
+  
+
+  
+
+words = text.split() 
+
+  
+
+chunks = sliding_window(words) 
+
+Show more lines 
+
+Best Use Case 
+
+✅ Time-series text 
+
+✅ Conversation analysis 
+
+✅ Transcript processing 
+
+ 
+
+Which Chunking Should You Use? 
+
+Use Case 
+
+Best Chunking 
+
+Simple PDF Search 
+
+Fixed Size 
+
+Production RAG 
+
+Recursive Chunking 
+
+Azure AI Search 
+
+Recursive + Overlap 
+
+GPT Applications 
+
+Token Chunking 
+
+Chatbot Knowledge Base 
+
+Sentence Chunking 
+
+Policy Documents 
+
+Structure Chunking 
+
+Banking Assistant 
+
+Recursive + Overlap 
+
+High Accuracy RAG 
+
+Semantic Chunking 
+
+Meeting Transcripts 
+
+Sliding Window 
+
+Research Papers 
+
+Paragraph Chunking 
+
+ 
+
+ 
+
+Tokenization and Embedding in RAG 
+
+These are the two most important preprocessing steps before storing data in a vector database. 
+
+Flow: 
+
+Plain Text 
+
+Text 
+
+↓ 
+
+Tokenization 
+
+↓ 
+
+Tokens 
+
+↓ 
+
+Embedding Model 
+
+↓ 
+
+Vector (Numbers) 
+
+↓ 
+
+Vector Database 
+
+↓ 
+
+Similarity Search 
+
+Show more lines 
+
+ 
+
+1. Tokenization 
+
+What is Tokenization? 
+
+Tokenization converts text into smaller units called tokens. 
+
+Example: 
+
+Plain Text 
+
+I love Generative AI 
+
+Show more lines 
+
+Tokens: 
+
+Python 
+
+["I", "love", "Generative", "AI"] 
+
+  
+
+Show more lines 
+
+LLMs don't understand text directly. 
+
+They understand: 
+
+Plain Text 
+
+Text → Tokens → Numbers 
+
+Show more lines 
+
+ 
+
+Simple Tokenization Example 
+
+Python 
+
+text = "I love Generative AI" 
+
+  
+
+tokens = text.split() 
+
+  
+
+print(tokens) 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+['I', 'love', 'Generative', 'AI'] 
+
+Show more lines 
+
+ 
+
+NLTK Tokenization 
+
+Python 
+
+from nltk.tokenize import word_tokenize 
+
+  
+
+text = "I love Generative AI." 
+
+  
+
+tokens = word_tokenize(text) 
+
+  
+
+print(tokens) 
+
+  
+
+Show more lines 
+
+Output: 
+
+Python 
+
+['I', 'love', 'Generative', 'AI', '.'] 
+
+Show more lines 
+
+ 
+
+Sentence Tokenization 
+
+Python 
+
+from nltk.tokenize import sent_tokenize 
+
+  
+
+text = """ 
+
+AI is transforming industries. 
+
+Machine Learning is powerful. 
+
+Deep Learning is advanced. 
+
+""" 
+
+  
+
+sentences = sent_tokenize(text) 
+
+  
+
+print(sentences) 
+
+` 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+[ 
+
+'AI is transforming industries.', 
+
+'Machine Learning is powerful.', 
+
+'Deep Learning is advanced.' 
+
+] 
+
+Show more lines 
+
+ 
+
+Why Tokenization? 
+
+Suppose we have: 
+
+Plain Text 
+
+Artificial Intelligence is amazing. 
+
+Show more lines 
+
+Computer cannot understand text. 
+
+After tokenization: 
+
+Python 
+
+["Artificial", "Intelligence", "is", "amazing"] 
+
+Show more lines 
+
+Now each token can be converted into numbers. 
+
+ 
+
+2. Embeddings 
+
+What is Embedding? 
+
+Embedding converts text into a vector (list of numbers). 
+
+Example: 
+
+Plain Text 
+
+I love Python 
+
+Show more lines 
+
+Embedding: 
+
+Python 
+
+[0.23, 0.75, -0.11, 0.56, ...] 
+
+Show more lines 
+
+LLMs and Vector Databases store these vectors. 
+
+ 
+
+Why Embeddings? 
+
+Embeddings capture meaning. 
+
+Example: 
+
+Plain Text 
+
+I love AI 
+
+Show more lines 
+
+Plain Text 
+
+I like Artificial Intelligence 
+
+Show more lines 
+
+Although words differ, 
+
+their vectors will be very close. 
+
+ 
+
+Using OpenAI Embeddings 
+
+Python 
+
+from openai import OpenAI 
+
+  
+
+client = OpenAI( 
+
+api_key="YOUR_API_KEY" 
+
+) 
+
+  
+
+response = client.embeddings.create( 
+
+model="text-embedding-3-small", 
+
+input="I love Generative AI" 
+
+) 
+
+  
+
+embedding = response.data[0].embedding 
+
+  
+
+print(len(embedding)) 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+1536 
+
+Show more lines 
+
+Meaning: 
+
+Plain Text 
+
+One sentence 
+
+↓ 
+
+1536-dimensional vector 
+
+Show more lines 
+
+ 
+
+Using Sentence Transformers 
+
+Popular in local RAG systems. 
+
+Install: 
+
+Shell 
+
+pip install sentence-transformers 
+
+  
+
+Show more lines 
+
+Code: 
+
+Python 
+
+from sentence_transformers import SentenceTransformer 
+
+  
+
+model = SentenceTransformer( 
+
+"all-MiniLM-L6-v2" 
+
+) 
+
+  
+
+text = "I love Generative AI" 
+
+  
+
+embedding = model.encode(text) 
+
+  
+
+print(embedding) 
+
+print(len(embedding)) 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+384-dimensional vector 
+
+Show more lines 
+
+ 
+
+Multiple Text Embeddings 
+
+Python 
+
+from sentence_transformers import SentenceTransformer 
+
+  
+
+model = SentenceTransformer( 
+
+"all-MiniLM-L6-v2" 
+
+) 
+
+  
+
+sentences = [ 
+
+"I love AI", 
+
+"Machine Learning is powerful", 
+
+"Python is easy" 
+
+] 
+
+  
+
+embeddings = model.encode(sentences) 
+
+  
+
+print(embeddings.shape) 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+(3,384) 
+
+Show more lines 
+
+Meaning: 
+
+Plain Text 
+
+3 sentences 
+
+384 values each 
+
+Show more lines 
+
+ 
+
+Similarity Search Using Embeddings 
+
+Python 
+
+from sentence_transformers import SentenceTransformer 
+
+from sklearn.metrics.pairwise import cosine_similarity 
+
+  
+
+model = SentenceTransformer( 
+
+"all-MiniLM-L6-v2" 
+
+) 
+
+  
+
+text1 = "I love Artificial Intelligence" 
+
+text2 = "I like AI" 
+
+  
+
+emb1 = model.encode([text1]) 
+
+emb2 = model.encode([text2]) 
+
+  
+
+score = cosine_similarity( 
+
+emb1, 
+
+emb2 
+
+) 
+
+  
+
+print(score) 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+0.89 
+
+Show more lines 
+
+Higher score means: 
+
+Plain Text 
+
+Higher semantic similarity 
+
+Show more lines 
+
+ 
+
+Tokenization + Embedding Complete Pipeline 
+
+Python 
+
+from sentence_transformers import SentenceTransformer 
+
+from nltk.tokenize import sent_tokenize 
+
+  
+
+text = """ 
+
+AI is transforming healthcare. 
+
+Doctors use AI for diagnosis. 
+
+Python is a programming language. 
+
+""" 
+
+  
+
+# Step 1: Tokenize into sentences 
+
+chunks = sent_tokenize(text) 
+
+  
+
+# Step 2: Load embedding model 
+
+model = SentenceTransformer( 
+
+"all-MiniLM-L6-v2" 
+
+) 
+
+  
+
+# Step 3: Generate embeddings 
+
+embeddings = model.encode(chunks) 
+
+  
+
+for chunk, embedding in zip(chunks, embeddings): 
+
+print("\nChunk:") 
+
+print(chunk) 
+
+  
+
+print("Embedding Size:") 
+
+print(len(embedding)) 
+
+Show more lines 
+
+ 
+
+RAG Workflow Example 
+
+Imagine a Banking Assistant. 
+
+Document: 
+
+Plain Text 
+
+Loan interest rate is 9%. 
+
+  
+
+Credit card bill payment can be done online. 
+
+  
+
+Savings account minimum balance is 5000. 
+
+` 
+
+Show more lines 
+
+Step 1: Chunking 
+
+Python 
+
+[ 
+
+"Loan interest rate is 9%", 
+
+"Credit card bill payment can be done online", 
+
+"Savings account minimum balance is 5000" 
+
+] 
+
+Show more lines 
+
+Step 2: Embedding 
+
+Python 
+
+Chunk 1 → [0.12, 0.76, ...] 
+
+Chunk 2 → [0.34, 0.52, ...] 
+
+Chunk 3 → [0.89, 0.15, ...] 
+
+Show more lines 
+
+Step 3: Store 
+
+Plain Text 
+
+Azure AI Search 
+
+FAISS 
+
+Pinecone 
+
+ChromaDB 
+
+Weaviate 
+
+Show more lines 
+
+Step 4: User Query 
+
+Plain Text 
+
+How can I pay my credit card bill? 
+
+Show more lines 
+
+Step 5: Generate Query Embedding 
+
+Python 
+
+query_embedding = model.encode( 
+
+"How can I pay my credit card bill?" 
+
+) 
+
+Show more lines 
+
+Step 6: Similarity Search 
+
+Most similar chunk: 
+
+Plain Text 
+
+Credit card bill payment can be done online. 
+
+Show more lines 
+
+Step 7: Send to LLM 
+
+Plain Text 
+
+Context: 
+
+Credit card bill payment can be done online. 
+
+  
+
+Question: 
+
+How can I pay my credit card bill? 
+
+Show more lines 
+
+Step 8: Final Response 
+
+Plain Text 
+
+You can pay your credit card bill online. 
+
+Show more lines 
+
+ 
+
+Interview Answer 
+
+What is Tokenization? 
+
+Tokenization is the process of splitting text into smaller units called tokens (words, subwords, or sentences) so that a machine-learning model can process them. 
+
+What is Embedding? 
+
+Embedding is the process of converting text into numerical vectors that capture semantic meaning. 
+
+Why do we need Embeddings in RAG? 
+
+Embeddings allow similarity search. Instead of matching exact keywords, the system retrieves content with similar meaning. 
+
+Real-Life RAG Flow 
+
+Plain Text 
+
+Document 
+
+↓ 
+
+Chunking 
+
+↓ 
+
+Tokenization 
+
+↓ 
+
+Embedding 
+
+↓ 
+
+Vector Database 
+
+↓ 
+
+Similarity Search 
+
+↓ 
+
+Relevant Chunks 
+
+↓ 
+
+LLM 
+
+↓ 
+
+Answer 
+
+`` 
+
+Different Embedding Models and Their Dimensions 
+
+An embedding model converts text into a vector (list of numbers). The number of values in the vector is called the dimension. 
+
+Example: 
+
+Plain Text 
+
+Text: 
+
+"I love AI" 
+
+  
+
+Embedding: 
+
+[0.12, 0.55, -0.21, 0.88, ...] 
+
+  
+
+Dimension = 4 
+
+Show more lines 
+
+Real models typically use hundreds or thousands of dimensions. 
+
+ 
+
+1. OpenAI Embedding Models 
+
+text-embedding-3-small 
+
+Python 
+
+text-embedding-3-small 
+
+  
+
+Show more lines 
+
+Dimension 
+
+Plain Text 
+
+1536 
+
+Show more lines 
+
+Advantages 
+
+Fast 
+
+Low cost 
+
+Good retrieval quality 
+
+Best Use Cases 
+
+✅ RAG applications 
+
+✅ Chatbots 
+
+✅ Semantic Search 
+
+✅ Enterprise Search 
+
+Example 
+
+Plain Text 
+
+Banking Assistant 
+
+HR Assistant 
+
+Policy Q&A 
+
+Show more lines 
+
+ 
+
+text-embedding-3-large 
+
+Python 
+
+text-embedding-3-large 
+
+Show more lines 
+
+Dimension 
+
+Plain Text 
+
+3072 
+
+Show more lines 
+
+Advantages 
+
+Higher accuracy 
+
+Better semantic understanding 
+
+Best Use Cases 
+
+✅ Enterprise RAG 
+
+✅ Legal Documents 
+
+✅ Healthcare Search 
+
+✅ Research Systems 
+
+Drawback 
+
+Plain Text 
+
+More storage 
+
+More cost 
+
+Show more lines 
+
+ 
+
+2. Sentence Transformers 
+
+all-MiniLM-L6-v2 
+
+Python 
+
+from sentence_transformers import SentenceTransformer 
+
+  
+
+model = SentenceTransformer( 
+
+"all-MiniLM-L6-v2" 
+
+) 
+
+Show more lines 
+
+Dimension 
+
+Plain Text 
+
+384 
+
+Show more lines 
+
+Advantages 
+
+Lightweight 
+
+Very fast 
+
+Popular 
+
+Best Use Cases 
+
+✅ Local RAG 
+
+✅ FAISS Search 
+
+✅ Small projects 
+
+Example 
+
+Plain Text 
+
+College Project 
+
+Personal Chatbot 
+
+Resume Search 
+
+Show more lines 
+
+ 
+
+all-mpnet-base-v2 
+
+Dimension 
+
+Plain Text 
+
+768 
+
+Show more lines 
+
+Advantages 
+
+Better accuracy than MiniLM 
+
+Strong semantic similarity 
+
+Best Use Cases 
+
+✅ Production RAG 
+
+✅ Document Search 
+
+✅ Enterprise Applications 
+
+ 
+
+3. BGE Models (BAAI) 
+
+Very popular in modern RAG systems. 
+
+bge-small-en-v1.5 
+
+Dimension 
+
+Plain Text 
+
+384 
+
+Show more lines 
+
+Best Use Cases 
+
+✅ Fast retrieval 
+
+✅ Low memory environments 
+
+ 
+
+bge-base-en-v1.5 
+
+Dimension 
+
+Plain Text 
+
+768 
+
+Show more lines 
+
+Best Use Cases 
+
+✅ General-purpose RAG 
+
+✅ Knowledge Bases 
+
+✅ Q&A Systems 
+
+ 
+
+bge-large-en-v1.5 
+
+Dimension 
+
+Plain Text 
+
+1024 
+
+Show more lines 
+
+Best Use Cases 
+
+✅ High-accuracy retrieval 
+
+✅ Enterprise Search 
+
+✅ Banking Assistant 
+
+ 
+
+4. E5 Models 
+
+Microsoft's E5 embeddings are widely used. 
+
+e5-small-v2 
+
+Dimension 
+
+Plain Text 
+
+384 
+
+Show more lines 
+
+Use Cases 
+
+✅ Lightweight applications 
+
+✅ Fast vector search 
+
+ 
+
+e5-base-v2 
+
+Dimension 
+
+Plain Text 
+
+768 
+
+Show more lines 
+
+Use Cases 
+
+✅ Production retrieval 
+
+✅ RAG 
+
+ 
+
+e5-large-v2 
+
+Dimension 
+
+Plain Text 
+
+1024 
+
+  
+
+Show more lines 
+
+Use Cases 
+
+✅ Large knowledge bases 
+
+✅ Enterprise Search 
+
+✅ Financial Applications 
+
+ 
+
+5. Cohere Embeddings 
+
+embed-english-v3 
+
+Dimension 
+
+Plain Text 
+
+1024 
+
+`` 
+
+Show more lines 
+
+Advantages 
+
+Strong multilingual performance 
+
+Good RAG accuracy 
+
+Use Cases 
+
+✅ Customer Support Systems 
+
+✅ Search Applications 
+
+✅ Document Retrieval 
+
+ 
+
+6. Azure AI Search + OpenAI 
+
+Common enterprise setup: 
+
+Plain Text 
+
+Document 
+
+↓ 
+
+Chunking 
+
+↓ 
+
+OpenAI Embeddings 
+
+↓ 
+
+Azure AI Search 
+
+↓ 
+
+Similarity Search 
+
+↓ 
+
+GPT Response 
+
+Show more lines 
+
+Usually: 
+
+Plain Text 
+
+text-embedding-3-small → 1536 
+
+Show more lines 
+
+or 
+
+Plain Text 
+
+text-embedding-3-large → 3072 
+
+Show more lines 
+
+ 
+
+Dimension Comparison 
+
+Model 
+
+Dimension 
+
+MiniLM-L6-v2 
+
+384 
+
+BGE Small 
+
+384 
+
+E5 Small 
+
+384 
+
+MPNet Base 
+
+768 
+
+BGE Base 
+
+768 
+
+E5 Base 
+
+768 
+
+BGE Large 
+
+1024 
+
+E5 Large 
+
+1024 
+
+Cohere v3 
+
+1024 
+
+OpenAI text-embedding-3-small 
+
+1536 
+
+OpenAI text-embedding-3-large 
+
+3072 
+
+ 
+
+Which Model Should I Choose? 
+
+Small Project / Learning 
+
+Plain Text 
+
+all-MiniLM-L6-v2 (384) 
+
+Show more lines 
+
+Reason: 
+
+Free 
+
+Fast 
+
+Easy to run locally 
+
+ 
+
+Production RAG 
+
+Plain Text 
+
+BGE Base (768) 
+
+  
+
+Show more lines 
+
+or 
+
+Plain Text 
+
+E5 Base (768) 
+
+Show more lines 
+
+Reason: 
+
+Good balance of speed and accuracy 
+
+ 
+
+Enterprise Banking Assistant 
+
+Plain Text 
+
+OpenAI text-embedding-3-small (1536) 
+
+Show more lines 
+
+Reason: 
+
+Excellent retrieval quality 
+
+Works well with Azure AI Search 
+
+ 
+
+Highest Retrieval Accuracy 
+
+Plain Text 
+
+OpenAI text-embedding-3-large (3072) 
+
+Show more lines 
+
+or 
+
+Plain Text 
+
+BGE Large (1024) 
+
+Show more lines 
+
+Reason: 
+
+Better semantic understanding 
+
+Higher recall and precision 
+
+ 
+
+Interview Answer (Short) 
+
+What is embedding dimension? 
+
+Embedding dimension is the number of values in the vector representation of text. Higher dimensions usually capture more semantic information but require more storage and computation. 
+
+Most commonly used models: 
+
+Plain Text 
+
+MiniLM → 384 
+
+MPNet → 768 
+
+BGE Base → 768 
+
+BGE Large → 1024 
+
+OpenAI text-embedding-3-small → 1536 
+
+OpenAI text-embedding-3-large → 3072 
+
+Show more lines 
+
+For RAG applications, OpenAI text-embedding-3-small and BGE/E5 models are the most commonly used because they provide a good balance between retrieval accuracy, speed, and cost. 
+
+ 
+
+Text Search from Vector DB and Hybrid Search (Cosine Similarity + BM25 + Graph DB) 
+
+In modern RAG systems, using only vector search is often not enough. Most enterprise systems use Hybrid Search: 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+Query Embedding 
+
+↓ 
+
+┌───────────────┐ 
+
+│ Vector Search │ ← Cosine Similarity 
+
+└───────────────┘ 
+
++ 
+
+┌───────────────┐ 
+
+│ BM25 Search │ ← Keyword Search 
+
+└───────────────┘ 
+
++ 
+
+┌───────────────┐ 
+
+│ Graph Search │ ← Relationship Search 
+
+└───────────────┘ 
+
+↓ 
+
+Combined Ranking 
+
+↓ 
+
+Top Chunks 
+
+↓ 
+
+LLM 
+
+↓ 
+
+Answer 
+
+`` 
+
+Show more lines 
+
+ 
+
+1. Vector Search using Cosine Similarity 
+
+Why? 
+
+Find texts with similar meaning. 
+
+Example 
+
+Document: 
+
+Plain Text 
+
+Chunk 1: Loan interest rate is 9% 
+
+Chunk 2: Credit card payment can be made online 
+
+Chunk 3: Savings account minimum balance is 5000 
+
+Show more lines 
+
+User Query: 
+
+Plain Text 
+
+How can I pay my credit card bill? 
+
+Show more lines 
+
+Even if the exact words don't match, embeddings capture the meaning. 
+
+ 
+
+Code 
+
+Python 
+
+from sentence_transformers import SentenceTransformer 
+
+from sklearn.metrics.pairwise import cosine_similarity 
+
+  
+
+documents = [ 
+
+"Loan interest rate is 9%", 
+
+"Credit card payment can be made online", 
+
+"Savings account minimum balance is 5000" 
+
+] 
+
+  
+
+query = "How can I pay my credit card bill?" 
+
+  
+
+model = SentenceTransformer("all-MiniLM-L6-v2") 
+
+  
+
+doc_embeddings = model.encode(documents) 
+
+query_embedding = model.encode([query]) 
+
+  
+
+scores = cosine_similarity( 
+
+query_embedding, 
+
+doc_embeddings 
+
+) 
+
+  
+
+for doc, score in zip(documents, scores[0]): 
+
+print(doc, score) 
+
+Show more lines 
+
+ 
+
+How Cosine Similarity Works 
+
+Assume: 
+
+Plain Text 
+
+Query Vector = [1,2,3] 
+
+  
+
+Doc Vector = [1,2,2] 
+
+Show more lines 
+
+Formula: 
+
+Plain Text 
+
+Cos θ = 
+
+A·B 
+
+---------------- 
+
+|A| × |B| 
+
+Show more lines 
+
+Result: 
+
+Plain Text 
+
+1 → Exact Match 
+
+0 → No Similarity 
+
+Show more lines 
+
+ 
+
+2. BM25 Search 
+
+Why? 
+
+Vector search sometimes misses exact keywords. 
+
+Example 
+
+User Query 
+
+Plain Text 
+
+Error Code 1078 
+
+  
+
+Show more lines 
+
+Vector search may not understand: 
+
+Plain Text 
+
+1078 
+
+Show more lines 
+
+But BM25 finds exact matches. 
+
+ 
+
+Code 
+
+Python 
+
+from rank_bm25 import BM25Okapi 
+
+  
+
+documents = [ 
+
+"Loan interest rate is 9%", 
+
+"Credit card bill payment online", 
+
+"Error code 1078 occurred" 
+
+] 
+
+  
+
+tokenized_docs = [ 
+
+doc.split() 
+
+for doc in documents 
+
+] 
+
+  
+
+bm25 = BM25Okapi(tokenized_docs) 
+
+  
+
+query = "error code 1078" 
+
+  
+
+scores = bm25.get_scores( 
+
+query.split() 
+
+) 
+
+  
+
+print(scores) 
+
+Show more lines 
+
+ 
+
+BM25 is Best For 
+
+✅ Product IDs 
+
+✅ Error Codes 
+
+✅ Account Numbers 
+
+✅ Technical Documents 
+
+✅ Exact Keyword Search 
+
+ 
+
+Problem with BM25 
+
+Query: 
+
+Plain Text 
+
+How to settle credit card dues? 
+
+Show more lines 
+
+Document: 
+
+Plain Text 
+
+Credit card payment online 
+
+Show more lines 
+
+Meaning is similar. 
+
+Keywords differ. 
+
+BM25 may fail. 
+
+ 
+
+Problem with Vector Search 
+
+Query: 
+
+Plain Text 
+
+Error 1078 
+
+Show more lines 
+
+Document: 
+
+Plain Text 
+
+Error 1078 while login 
+
+Show more lines 
+
+Numbers don't embed well sometimes. 
+
+BM25 works better. 
+
+ 
+
+Hybrid Search (Vector + BM25) 
+
+Enterprise systems combine both. 
+
+Plain Text 
+
+Final Score 
+
+  
+
+= 
+
+0.6 × Cosine Similarity 
+
+  
+
++ 
+
+  
+
+0.4 × BM25 Score 
+
+Show more lines 
+
+ 
+
+Code 
+
+Python 
+
+final_score = ( 
+
+0.6 * cosine_score 
+
++ 
+
+0.4 * bm25_score 
+
+) 
+
+Show more lines 
+
+Then sort: 
+
+Python 
+
+highest score = most relevant 
+
+Show more lines 
+
+ 
+
+Example 
+
+User Query: 
+
+Plain Text 
+
+Credit card settlement 
+
+`` 
+
+Show more lines 
+
+Cosine Score: 
+
+Plain Text 
+
+0.92 
+
+  
+
+Show more lines 
+
+BM25 Score: 
+
+Plain Text 
+
+0.80 
+
+`` 
+
+Show more lines 
+
+Final: 
+
+Plain Text 
+
+(0.6 × 0.92) 
+
++ 
+
+(0.4 × 0.80) 
+
+  
+
+= 
+
+0.872 
+
+Show more lines 
+
+ 
+
+3. Graph Database Search 
+
+Vector Search finds: 
+
+Plain Text 
+
+Meaning 
+
+  
+
+Show more lines 
+
+BM25 finds: 
+
+Plain Text 
+
+Keywords 
+
+  
+
+Show more lines 
+
+Graph DB finds: 
+
+Plain Text 
+
+Relationships 
+
+Show more lines 
+
+ 
+
+Example Banking Graph 
+
+Plain Text 
+
+Customer 
+
+| 
+
+| owns 
+
+| 
+
+Account 
+
+| 
+
+| linked_to 
+
+| 
+
+Loan 
+
+| 
+
+| secured_by 
+
+| 
+
+Property 
+
+Show more lines 
+
+Stored in Graph DB. 
+
+Example: 
+
+Plain Text 
+
+Neo4j 
+
+TigerGraph 
+
+Amazon Neptune 
+
+Show more lines 
+
+ 
+
+Sample Graph Search 
+
+User Query: 
+
+Plain Text 
+
+Which loans belong to customer C101? 
+
+Show more lines 
+
+Graph Query: 
+
+Cypher 
+
+MATCH (c:Customer {id:'C101'}) 
+
+-[:OWNS]-> 
+
+(l:Loan) 
+
+RETURN l 
+
+Show more lines 
+
+Output: 
+
+Plain Text 
+
+Home Loan 
+
+Car Loan 
+
+Show more lines 
+
+ 
+
+Python Example with Neo4j 
+
+Python 
+
+from neo4j import GraphDatabase 
+
+  
+
+driver = GraphDatabase.driver( 
+
+uri, 
+
+auth=("neo4j","password") 
+
+) 
+
+  
+
+query = """ 
+
+MATCH (c:Customer {id:$cid}) 
+
+-[:OWNS]-> 
+
+(l:Loan) 
+
+RETURN l.loan_type 
+
+""" 
+
+  
+
+with driver.session() as session: 
+
+  
+
+result = session.run( 
+
+query, 
+
+cid="C101" 
+
+) 
+
+  
+
+for row in result: 
+
+print(row) 
+
+Show more lines 
+
+ 
+
+Why Use Graph DB? 
+
+Suppose document says: 
+
+Plain Text 
+
+John owns Account A101 
+
+Show more lines 
+
+Another document says: 
+
+Plain Text 
+
+Account A101 linked to Loan L102 
+
+  
+
+Show more lines 
+
+Another says: 
+
+Plain Text 
+
+Loan L102 secured by Property P88 
+
+  
+
+Show more lines 
+
+Vector search retrieves documents. 
+
+Graph search retrieves relationships instantly. 
+
+ 
+
+Complete Hybrid Search Architecture 
+
+Plain Text 
+
+User Query 
+
+| 
+
+V 
+
+  
+
+Generate Query Embedding 
+
+| 
+
+| 
+
+--------------------------------- 
+
+| | | 
+
+V V V 
+
+  
+
+Vector Search BM25 Graph Search 
+
+(Semantic) (Keyword) (Relationship) 
+
+  
+
+| | | 
+
+--------------------------------- 
+
+| 
+
+Rank Merger 
+
+| 
+
+Top Documents 
+
+| 
+
+LLM 
+
+| 
+
+Answer 
+
+Show more lines 
+
+ 
+
+Example: Banking Assistant 
+
+User Query: 
+
+Plain Text 
+
+Show details of my home loan account. 
+
+Show more lines 
+
+Vector Search Returns 
+
+Plain Text 
+
+Loan policies 
+
+Home loan details 
+
+Interest information 
+
+Show more lines 
+
+BM25 Returns 
+
+Plain Text 
+
+home loan account 
+
+Show more lines 
+
+exact keyword matches. 
+
+Graph Search Returns 
+
+Plain Text 
+
+Customer K123 
+
+↓ 
+
+Owns 
+
+↓ 
+
+Loan L901 
+
+↓ 
+
+Balance = 12 Lakhs 
+
+Show more lines 
+
+Combined Result 
+
+Plain Text 
+
+Home Loan L901 
+
+Balance = 12 Lakhs 
+
+Interest Rate = 9% 
+
+EMI = ₹15,000 
+
+Show more lines 
+
+ 
+
+Simple Hybrid Search Code 
+
+Python 
+
+def hybrid_search(query): 
+
+  
+
+vector_results = vector_db.search(query) 
+
+  
+
+bm25_results = bm25.search(query) 
+
+  
+
+graph_results = graph_db.search(query) 
+
+  
+
+combined = ( 
+
+vector_results 
+
++ 
+
+bm25_results 
+
++ 
+
+graph_results 
+
+) 
+
+  
+
+ranked = sorted( 
+
+combined, 
+
+key=lambda x: x["score"], 
+
+reverse=True 
+
+) 
+
+  
+
+return ranked[:5] 
+
+Show more lines 
+
+ 
+
+Interview Answer 
+
+What is Hybrid Search? 
+
+Hybrid Search combines: 
+
+Vector Search (Cosine Similarity) for semantic meaning. 
+
+BM25 Search for exact keyword matching. 
+
+Graph Search for relationship-based retrieval. 
+
+Why use Hybrid Search? 
+
+Vector Search finds similar meaning. 
+
+BM25 finds exact keywords, IDs, codes, and numbers. 
+
+Graph DB finds entity relationships. 
+
+Example: 
+
+Plain Text 
+
+Query: 
+
+"Show my home loan linked account" 
+
+  
+
+Vector Search → finds loan-related content 
+
+BM25 → finds exact "home loan" 
+
+Graph DB → finds customer-account-loan relationship 
+
+  
+
+Combined result gives the most accurate answer. 
+
+Show more lines 
+
+Most enterprise RAG systems use Hybrid Search because it provides better recall, better precision, and better context than using vector search alone. 
+
+ 
+
+Re-ranking in RAG 
+
+What is Re-ranking? 
+
+Re-ranking is the process of re-ordering retrieved documents/chunks to improve retrieval quality before sending context to the LLM. 
+
+Without Re-ranking 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+Vector Search 
+
+↓ 
+
+  
+
+1. Document A (0.82) 
+
+2. Document B (0.80) 
+
+3. Document C (0.79) 
+
+  
+
+Send to LLM 
+
+`` 
+
+Show more lines 
+
+Vector similarity may not always return the most relevant result first. 
+
+ 
+
+With Re-ranking 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+Vector Search 
+
+↓ 
+
+  
+
+Top 20 Documents 
+
+↓ 
+
+  
+
+Re-ranker Model 
+
+↓ 
+
+  
+
+1. Document C (Most Relevant) 
+
+2. Document A 
+
+3. Document B 
+
+  
+
+Send Top 3 to LLM 
+
+Show more lines 
+
+The re-ranker deeply compares: 
+
+Plain Text 
+
+Query ↔ Document 
+
+Show more lines 
+
+and produces a more accurate ranking. 
+
+ 
+
+Why Do We Need Re-ranking? 
+
+Suppose user asks: 
+
+Plain Text 
+
+How can I pay my credit card bill online? 
+
+Show more lines 
+
+Retrieved Documents: 
+
+Plain Text 
+
+Doc 1: 
+
+Credit card types and benefits 
+
+  
+
+Doc 2: 
+
+Credit card online bill payment guide 
+
+  
+
+Doc 3: 
+
+Credit card reward points 
+
+  
+
+Show more lines 
+
+Vector search may rank: 
+
+Plain Text 
+
+Doc1 
+
+Doc2 
+
+Doc3 
+
+Show more lines 
+
+But after re-ranking: 
+
+Plain Text 
+
+Doc2 
+
+Doc1 
+
+Doc3 
+
+Show more lines 
+
+Because Doc2 directly answers the question. 
+
+ 
+
+Architecture 
+
+Plain Text 
+
+User Query 
+
+| 
+
+V 
+
+  
+
+Hybrid Search 
+
+(Vector + BM25 + Graph) 
+
+  
+
+| 
+
+V 
+
+  
+
+Top 20 Results 
+
+  
+
+| 
+
+V 
+
+  
+
+Re-ranker Model 
+
+  
+
+| 
+
+V 
+
+  
+
+Top 3 Results 
+
+  
+
+| 
+
+V 
+
+  
+
+LLM 
+
+Show more lines 
+
+ 
+
+1. Cross Encoder Re-ranking (Most Popular) 
+
+Cross Encoder reads: 
+
+Plain Text 
+
+Query + Document 
+
+Show more lines 
+
+together. 
+
+Example: 
+
+Plain Text 
+
+Query: 
+
+How to pay credit card bill? 
+
+  
+
+Document: 
+
+Credit card bills can be paid online. 
+
+Show more lines 
+
+The model predicts: 
+
+Plain Text 
+
+Relevance = 0.98 
+
+Show more lines 
+
+ 
+
+Code 
+
+Install: 
+
+Shell 
+
+pip install sentence-transformers 
+
+Show more lines 
+
+Code: 
+
+Python 
+
+from sentence_transformers import CrossEncoder 
+
+  
+
+model = CrossEncoder( 
+
+"cross-encoder/ms-marco-MiniLM-L-6-v2" 
+
+) 
+
+  
+
+query = "How can I pay my credit card bill?" 
+
+  
+
+documents = [ 
+
+"Credit card reward points", 
+
+"Credit card bills can be paid online", 
+
+"Home loan interest rate" 
+
+] 
+
+  
+
+pairs = [ 
+
+(query, doc) 
+
+for doc in documents 
+
+] 
+
+  
+
+scores = model.predict(pairs) 
+
+  
+
+for doc, score in zip(documents, scores): 
+
+print(score, doc) 
+
+Show more lines 
+
+ 
+
+Sort by Score 
+
+Python 
+
+results = list(zip(documents, scores)) 
+
+  
+
+results.sort( 
+
+key=lambda x: x[1], 
+
+reverse=True 
+
+) 
+
+  
+
+print(results) 
+
+Show more lines 
+
+Output: 
+
+Plain Text 
+
+0.99 Credit card bills can be paid online 
+
+  
+
+0.30 Credit card reward points 
+
+  
+
+0.05 Home loan interest rate 
+
+Show more lines 
+
+ 
+
+2. Re-ranking After Vector Search 
+
+Step 1 
+
+Retrieve top 20 chunks 
+
+Python 
+
+top_chunks = vector_db.similarity_search( 
+
+query, 
+
+k=20 
+
+) 
+
+Show more lines 
+
+Step 2 
+
+Re-rank them 
+
+Python 
+
+pairs = [ 
+
+(query, chunk.page_content) 
+
+for chunk in top_chunks 
+
+] 
+
+  
+
+scores = model.predict(pairs) 
+
+Show more lines 
+
+Step 3 
+
+Sort 
+
+Python 
+
+ranked = sorted( 
+
+zip(top_chunks, scores), 
+
+key=lambda x: x[1], 
+
+reverse=True 
+
+) 
+
+Show more lines 
+
+Step 4 
+
+Send only top 3 
+
+Python 
+
+best_chunks = ranked[:3] 
+
+Show more lines 
+
+ 
+
+Cohere Re-ranker Example 
+
+Very common in enterprise RAG. 
+
+Python 
+
+import cohere 
+
+  
+
+co = cohere.Client(api_key) 
+
+  
+
+response = co.rerank( 
+
+query="credit card bill payment", 
+
+documents=[ 
+
+"credit card reward points", 
+
+"credit card payment online", 
+
+"loan information" 
+
+], 
+
+top_n=2 
+
+) 
+
+  
+
+print(response.results) 
+
+Show more lines 
+
+ 
+
+Azure AI Search Re-ranking 
+
+Flow: 
+
+Plain Text 
+
+Azure AI Search 
+
+↓ 
+
+Hybrid Search 
+
+↓ 
+
+Semantic Ranker 
+
+↓ 
+
+Top Results 
+
+Show more lines 
+
+Azure's Semantic Ranker automatically performs re-ranking after retrieval. 
+
+ 
+
+Why Not Search Directly with Re-ranker? 
+
+Suppose: 
+
+Plain Text 
+
+1 Million Documents 
+
+  
+
+Show more lines 
+
+Cross Encoder compares: 
+
+Plain Text 
+
+Query + Every Document 
+
+  
+
+Show more lines 
+
+Very expensive. 
+
+So we do: 
+
+Plain Text 
+
+Step 1: 
+
+Vector Search 
+
+Retrieve Top 20 
+
+  
+
+Step 2: 
+
+Re-rank Top 20 
+
+  
+
+Step 3: 
+
+Return Top 3 
+
+Show more lines 
+
+This is much faster. 
+
+ 
+
+Complete Example 
+
+Python 
+
+from sentence_transformers import ( 
+
+SentenceTransformer, 
+
+CrossEncoder 
+
+) 
+
+from sklearn.metrics.pairwise import cosine_similarity 
+
+  
+
+documents = [ 
+
+"Loan interest rate is 9%", 
+
+"Credit card payment can be made online", 
+
+"Savings account minimum balance is 5000" 
+
+] 
+
+  
+
+query = "How can I pay my credit card bill?" 
+
+  
+
+# Embedding model 
+
+embed_model = SentenceTransformer( 
+
+"all-MiniLM-L6-v2" 
+
+) 
+
+  
+
+doc_embeddings = embed_model.encode( 
+
+documents 
+
+) 
+
+  
+
+query_embedding = embed_model.encode( 
+
+[query] 
+
+) 
+
+  
+
+# First Retrieval 
+
+scores = cosine_similarity( 
+
+query_embedding, 
+
+doc_embeddings 
+
+)[0] 
+
+  
+
+retrieved = sorted( 
+
+zip(documents, scores), 
+
+key=lambda x: x[1], 
+
+reverse=True 
+
+) 
+
+  
+
+top_docs = [x[0] for x in retrieved[:3]] 
+
+  
+
+# Re-ranking 
+
+reranker = CrossEncoder( 
+
+"cross-encoder/ms-marco-MiniLM-L-6-v2" 
+
+) 
+
+  
+
+pairs = [(query, doc) for doc in top_docs] 
+
+  
+
+rerank_scores = reranker.predict( 
+
+pairs 
+
+) 
+
+  
+
+final_results = sorted( 
+
+zip(top_docs, rerank_scores), 
+
+key=lambda x: x[1], 
+
+reverse=True 
+
+) 
+
+  
+
+print(final_results) 
+
+Show more lines 
+
+ 
+
+Benefits of Re-ranking 
+
+1. Better Accuracy 
+
+Without reranking: 
+
+Plain Text 
+
+Keyword similarity only 
+
+Show more lines 
+
+With reranking: 
+
+Plain Text 
+
+Understands question and context 
+
+Show more lines 
+
+ 
+
+2. Better Relevance 
+
+Finds: 
+
+Plain Text 
+
+Most useful document 
+
+Show more lines 
+
+instead of: 
+
+Plain Text 
+
+Most similar document 
+
+Show more lines 
+
+ 
+
+3. Reduces Hallucination 
+
+Better context supplied to LLM. 
+
+Plain Text 
+
+Better Retrieval 
+
+↓ 
+
+Better Context 
+
+↓ 
+
+Better Answer 
+
+Show more lines 
+
+ 
+
+4. Improves RAG Performance 
+
+Most production RAG systems use: 
+
+Plain Text 
+
+Retriever 
+
++ 
+
+Re-ranker 
+
+`` 
+
+Show more lines 
+
+because retrieval quality improves significantly. 
+
+ 
+
+5. Smaller Context Sent to LLM 
+
+Instead of: 
+
+Plain Text 
+
+20 documents 
+
+Show more lines 
+
+send: 
+
+Plain Text 
+
+Top 3 documents 
+
+Show more lines 
+
+Benefits: 
+
+Lower token usage 
+
+Lower cost 
+
+Faster response 
+
+ 
+
+6. Works Well with Hybrid Search 
+
+Plain Text 
+
+Vector Search 
+
++ 
+
+BM25 
+
++ 
+
+Graph Search 
+
++ 
+
+Re-ranking 
+
+`` 
+
+Show more lines 
+
+This is the architecture used in many enterprise search and chatbot systems. 
+
+ 
+
+7. Better Precision 
+
+Example: 
+
+Query: 
+
+Plain Text 
+
+How do I reset my debit card PIN? 
+
+Show more lines 
+
+Retrieved: 
+
+Plain Text 
+
+Debit card 
+
+Credit card 
+
+Loan 
+
+PIN reset 
+
+Show more lines 
+
+Re-ranker pushes: 
+
+Plain Text 
+
+PIN reset 
+
+Show more lines 
+
+to the top. 
+
+ 
+
+Interview Answer 
+
+What is Re-ranking in RAG? 
+
+Re-ranking is a second-stage retrieval process where the top documents retrieved from vector, BM25, or hybrid search are re-evaluated and reordered based on their relevance to the user query. 
+
+Why is it used? 
+
+Improves retrieval accuracy 
+
+Improves relevance 
+
+Reduces hallucinations 
+
+Reduces token cost 
+
+Improves RAG answer quality 
+
+Typical Enterprise Flow 
+
+Plain Text 
+
+Query 
+
+↓ 
+
+Hybrid Search 
+
+(Vector + BM25 + Graph) 
+
+↓ 
+
+Top 20 Results 
+
+↓ 
+
+Re-ranker (Cross Encoder) 
+
+↓ 
+
+Top 3 Results 
+
+↓ 
+
+LLM 
+
+↓ 
+
+Final Answer 
+
+Show more lines 
+
+One-line interview answer: 
+
+Re-ranking is a post-retrieval optimization step that reorders retrieved documents using a stronger relevance model, ensuring the most relevant context is sent to the LLM for generating accurate responses. 
+
+ 
+
+LangChain and Redis Caching in RAG Applications 
+
+When building a RAG application, chatbot, banking assistant, or AI agent, LangChain helps orchestrate the workflow, while Redis helps improve performance through caching. 
+
+Where LangChain Fits 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+LangChain 
+
+↓ 
+
+Retriever 
+
+↓ 
+
+Vector DB 
+
+↓ 
+
+LLM 
+
+↓ 
+
+Response 
+
+Show more lines 
+
+LangChain provides: 
+
+Document loaders 
+
+Chunking 
+
+Embeddings 
+
+Vector stores 
+
+Retrievers 
+
+Chains 
+
+Agents 
+
+Memory 
+
+Caching integration 
+
+ 
+
+Why Redis? 
+
+Redis is an in-memory database. 
+
+Instead of recomputing expensive operations repeatedly: 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+LLM Call 
+
+↓ 
+
+Generate Answer 
+
+Show more lines 
+
+Store result in Redis. 
+
+Next time: 
+
+Plain Text 
+
+Same Query 
+
+↓ 
+
+Redis Cache Hit 
+
+↓ 
+
+Return Immediately 
+
+Show more lines 
+
+Benefits: 
+
+Faster response 
+
+Lower LLM cost 
+
+Reduced API calls 
+
+Reduced latency 
+
+ 
+
+Places Where Redis Can Be Used 
+
+1. LLM Response Cache 
+
+Most common use. 
+
+Without Cache 
+
+Plain Text 
+
+User: 
+
+What is AI? 
+
+  
+
+↓ 
+
+GPT API Call 
+
+  
+
+↓ 
+
+Response 
+
+Show more lines 
+
+100 users ask same question: 
+
+Plain Text 
+
+100 GPT Calls 
+
+Show more lines 
+
+Expensive. 
+
+ 
+
+With Redis Cache 
+
+Plain Text 
+
+User: 
+
+What is AI? 
+
+  
+
+↓ 
+
+Redis Check 
+
+  
+
+Found ? 
+
+↓ 
+
+Yes 
+
+  
+
+Return Cached Response 
+
+Show more lines 
+
+Only first request hits GPT. 
+
+ 
+
+LangChain Code 
+
+Python 
+
+from langchain.globals import set_llm_cache 
+
+from langchain_community.cache import RedisCache 
+
+  
+
+set_llm_cache( 
+
+RedisCache( 
+
+redis_url="redis://localhost:6379" 
+
+) 
+
+) 
+
+Show more lines 
+
+Now all LLM responses are cached automatically. 
+
+ 
+
+2. Embedding Cache 
+
+Generating embeddings is expensive. 
+
+Without Cache 
+
+Query: 
+
+Plain Text 
+
+home loan interest rate 
+
+Show more lines 
+
+Every time: 
+
+Python 
+
+embedding_model.embed_query() 
+
+Show more lines 
+
+creates a new vector. 
+
+ 
+
+With Cache 
+
+Store: 
+
+Plain Text 
+
+Query 
+
+↓ 
+
+Embedding Vector 
+
+Show more lines 
+
+in Redis. 
+
+Next request: 
+
+Plain Text 
+
+Query 
+
+↓ 
+
+Redis 
+
+↓ 
+
+Embedding Returned 
+
+Show more lines 
+
+No model execution. 
+
+ 
+
+Code 
+
+Python 
+
+from langchain.embeddings import CacheBackedEmbeddings 
+
+from langchain.storage import LocalFileStore 
+
+  
+
+cached_embedder = CacheBackedEmbeddings.from_bytes_store( 
+
+embedding_model, 
+
+LocalFileStore("./cache") 
+
+) 
+
+Show more lines 
+
+Same concept can be implemented with Redis. 
+
+ 
+
+3. Retrieval Cache 
+
+Suppose query: 
+
+Plain Text 
+
+What is home loan eligibility? 
+
+Show more lines 
+
+Vector DB search performs: 
+
+Plain Text 
+
+Embedding 
+
+↓ 
+
+Similarity Search 
+
+↓ 
+
+Top Chunks 
+
+Show more lines 
+
+Store retrieved chunks. 
+
+Redis entry: 
+
+Python 
+
+{ 
+
+"query": 
+
+"What is home loan eligibility?", 
+
+  
+
+"chunks": 
+
+[...] 
+
+} 
+
+Show more lines 
+
+Next request skips vector search. 
+
+ 
+
+Flow 
+
+Plain Text 
+
+Query 
+
+↓ 
+
+Redis Check 
+
+↓ 
+
+  
+
+Cache Hit ? 
+
+| 
+
+Yes 
+
+| 
+
+Retrieved Chunks 
+
+  
+
+No 
+
+↓ 
+
+  
+
+Vector Search 
+
+↓ 
+
+  
+
+Store Results 
+
+Show more lines 
+
+ 
+
+4. Agent Result Cache 
+
+In LangGraph/LangChain agents: 
+
+Plain Text 
+
+Planner Agent 
+
+↓ 
+
+Loan Agent 
+
+↓ 
+
+Policy Agent 
+
+↓ 
+
+Complaint Agent 
+
+Show more lines 
+
+Each may make expensive API calls. 
+
+Cache outputs. 
+
+Example: 
+
+Plain Text 
+
+Loan Summary for Customer 101 
+
+Show more lines 
+
+can be stored: 
+
+Python 
+
+loan:101 
+
+Show more lines 
+
+ 
+
+Example 
+
+Python 
+
+redis.set( 
+
+"loan:101", 
+
+loan_data 
+
+) 
+
+` 
+
+Show more lines 
+
+Next request: 
+
+Python 
+
+redis.get( 
+
+"loan:101" 
+
+) 
+
+Show more lines 
+
+No database call. 
+
+ 
+
+5. Session Memory Cache 
+
+Chatbots need conversation context. 
+
+Store: 
+
+Plain Text 
+
+User Messages 
+
+Assistant Messages 
+
+Show more lines 
+
+inside Redis. 
+
+ 
+
+LangChain Memory Example 
+
+Python 
+
+from langchain.memory import ConversationBufferMemory 
+
+  
+
+memory = ConversationBufferMemory() 
+
+Show more lines 
+
+Using Redis: 
+
+Python 
+
+from langchain.memory import RedisChatMessageHistory 
+
+  
+
+history = RedisChatMessageHistory( 
+
+session_id="user123", 
+
+url="redis://localhost:6379" 
+
+) 
+
+Show more lines 
+
+ 
+
+Stored Data 
+
+Plain Text 
+
+User: 
+
+What is my balance? 
+
+  
+
+Assistant: 
+
+Your balance is ₹50,000 
+
+  
+
+User: 
+
+What about my loan? 
+
+Show more lines 
+
+Redis maintains conversation history. 
+
+ 
+
+6. Semantic Cache 
+
+Very powerful. 
+
+Normal Cache: 
+
+Plain Text 
+
+What is AI? 
+
+Show more lines 
+
+equals 
+
+Plain Text 
+
+What is AI? 
+
+Show more lines 
+
+only exact match. 
+
+ 
+
+Semantic Cache: 
+
+Plain Text 
+
+What is AI? 
+
+  
+
+What is Artificial Intelligence? 
+
+  
+
+Explain AI 
+
+Show more lines 
+
+All similar meanings. 
+
+Same cached answer can be reused. 
+
+ 
+
+Flow 
+
+Plain Text 
+
+Query 
+
+↓ 
+
+  
+
+Embedding 
+
+  
+
+↓ 
+
+  
+
+Redis Vector Search 
+
+  
+
+↓ 
+
+  
+
+Find Similar Query 
+
+  
+
+↓ 
+
+  
+
+Return Cached Response 
+
+`` 
+
+Show more lines 
+
+ 
+
+Redis Semantic Cache Example 
+
+Python 
+
+from langchain_community.cache import RedisSemanticCache 
+
+  
+
+set_llm_cache( 
+
+RedisSemanticCache( 
+
+redis_url="redis://localhost:6379", 
+
+embedding=embedding_model 
+
+) 
+
+) 
+
+Show more lines 
+
+ 
+
+7. API Response Cache 
+
+Suppose banking assistant calls: 
+
+Plain Text 
+
+Customer API 
+
+Loan API 
+
+Account API 
+
+Show more lines 
+
+Response: 
+
+JSON 
+
+{ 
+
+"loan_id":"L101", 
+
+"balance":"100000" 
+
+  
+
+Show more lines 
+
+Cache result. 
+
+Redis: 
+
+Python 
+
+redis.set( 
+
+"customer:101", 
+
+response 
+
+) 
+
+Show more lines 
+
+Avoid repeated backend calls. 
+
+ 
+
+Complete Architecture 
+
+Plain Text 
+
+User Query 
+
+| 
+
+V 
+
+  
+
+Redis Query Cache 
+
+| 
+
+Cache Miss 
+
+| 
+
+V 
+
+  
+
+Embedding Model 
+
+| 
+
+V 
+
+  
+
+Redis Embedding Cache 
+
+| 
+
+V 
+
+  
+
+Hybrid Search 
+
+(Vector + BM25 + Graph) 
+
+  
+
+| 
+
+V 
+
+  
+
+Redis Retrieval Cache 
+
+| 
+
+V 
+
+  
+
+Re-ranking 
+
+| 
+
+V 
+
+  
+
+LLM 
+
+| 
+
+V 
+
+  
+
+Redis Response Cache 
+
+| 
+
+V 
+
+  
+
+Response 
+
+Show more lines 
+
+ 
+
+Benefits of Redis Caching 
+
+1. Faster Response Time 
+
+Without Cache: 
+
+Plain Text 
+
+5-10 seconds 
+
+Show more lines 
+
+With Cache: 
+
+Plain Text 
+
+50-200 ms 
+
+Show more lines 
+
+ 
+
+2. Reduces LLM Cost 
+
+Without cache: 
+
+Plain Text 
+
+1000 queries 
+
+= 
+
+1000 GPT calls 
+
+Show more lines 
+
+With cache: 
+
+Plain Text 
+
+1000 queries 
+
+= 
+
+200 GPT calls 
+
+Show more lines 
+
+ 
+
+3. Reduces Embedding Cost 
+
+Same text: 
+
+Plain Text 
+
+Embed Once 
+
+Reuse Many Times 
+
+Show more lines 
+
+ 
+
+4. Reduces Vector DB Calls 
+
+Less load on: 
+
+Plain Text 
+
+Azure AI Search 
+
+FAISS 
+
+Pinecone 
+
+Chroma 
+
+Weaviate 
+
+Show more lines 
+
+ 
+
+5. Improves Scalability 
+
+Supports: 
+
+Plain Text 
+
+More Users 
+
+More Sessions 
+
+More Requests 
+
+  
+
+Show more lines 
+
+with the same infrastructure. 
+
+ 
+
+6. Better User Experience 
+
+Users get: 
+
+Plain Text 
+
+Lower latency 
+
+Consistent responses 
+
+Faster retrieval 
+
+Show more lines 
+
+ 
+
+7. Useful for Agents 
+
+Cache: 
+
+Plain Text 
+
+Loan Summary 
+
+Customer Details 
+
+Policy Details 
+
+Transaction History 
+
+Show more lines 
+
+instead of repeatedly querying databases. 
+
+ 
+
+Real Banking Assistant Example 
+
+User 1: 
+
+Plain Text 
+
+What is the home loan interest rate? 
+
+Show more lines 
+
+Flow: 
+
+Plain Text 
+
+Redis Miss 
+
+↓ 
+
+Hybrid Search 
+
+↓ 
+
+LL 
+
+Show more lines 
+
+User 2 asks same question: 
+
+Plain Text 
+
+What is the home loan interest rate? 
+
+Show more lines 
+
+Flow: 
+
+Plain Text 
+
+Redis Hit 
+
+↓ 
+
+Return Cached Answer 
+
+Show more lines 
+
+No: 
+
+Embedding generation 
+
+Vector search 
+
+Re-ranking 
+
+LLM call 
+
+ 
+
+Interview Answer 
+
+How is Redis used with LangChain? 
+
+Redis is commonly used as a caching layer in LangChain applications to store LLM responses, embeddings, retrieval results, agent outputs, session memory, and API responses. 
+
+Benefits: 
+
+Faster responses 
+
+Lower LLM and embedding costs 
+
+Reduced vector database queries 
+
+Better scalability 
+
+Improved user experience 
+
+Efficient conversational memory 
+
+Enterprise RAG Flow: 
+
+Plain Text 
+
+Query 
+
+↓ 
+
+Redis Cache 
+
+↓ 
+
+Embedding Cache 
+
+↓ 
+
+Hybrid Search 
+
+↓ 
+
+Re-ranking 
+
+↓ 
+
+LLM 
+
+↓ 
+
+Response Cache 
+
+↓ 
+
+User 
+
+Show more lines 
+
+One-line interview answer: 
+
+Redis acts as a high-speed caching layer in LangChain applications, reducing latency and cost by storing frequently used embeddings, retrieval results, conversation history, and LLM responses. 
+
+LangGraph Initialization - Basic Code and Explanation 
+
+LangGraph is used to build workflows where multiple nodes (functions/agents) are connected in a graph. 
+
+Typical Flow: 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+Intent Classification 
+
+↓ 
+
+Risk Check 
+
+↓ 
+
+Agent Routing 
+
+↓ 
+
+Response 
+
+`` 
+
+Show more lines 
+
+ 
+
+Step 1: Define State 
+
+State stores data shared between all nodes. 
+
+Python 
+
+from typing import TypedDict 
+
+  
+
+class GraphState(TypedDict): 
+
+message: str 
+
+intent: str 
+
+risk: str 
+
+response: str 
+
+Show more lines 
+
+Explanation 
+
+Python 
+
+message 
+
+Show more lines 
+
+Stores user query. 
+
+Python 
+
+intent 
+
+Show more lines 
+
+Stores classified intent. 
+
+Python 
+
+risk 
+
+  
+
+Show more lines 
+
+Stores risk level. 
+
+Python 
+
+response 
+
+Show more lines 
+
+Stores final response. 
+
+ 
+
+Step 2: Create Node Functions 
+
+Intent Node 
+
+Python 
+
+def classify_node(state: GraphState): 
+
+return { 
+
+"intent": "balance" 
+
+} 
+
+Show more lines 
+
+Explanation 
+
+Receives current state and returns updates. 
+
+Input: 
+
+Python 
+
+{ 
+
+"message": "Check my account balance" 
+
+} 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+{ 
+
+"intent": "balance" 
+
+} 
+
+Show more lines 
+
+ 
+
+Risk Node 
+
+Python 
+
+def risk_node(state: GraphState): 
+
+return { 
+
+"risk": "low" 
+
+} 
+
+Show more lines 
+
+Explanation 
+
+Checks whether request is low, medium, or high risk. 
+
+Output: 
+
+Python 
+
+{ 
+
+"risk": "low" 
+
+} 
+
+Show more lines 
+
+ 
+
+Response Node 
+
+Python 
+
+def response_node(state: GraphState): 
+
+return { 
+
+"response": "Your balance is ₹50,000" 
+
+} 
+
+Show more lines 
+
+ 
+
+Step 3: Initialize StateGraph 
+
+Python 
+
+from langgraph.graph import StateGraph 
+
+  
+
+graph = StateGraph(GraphState) 
+
+`` 
+
+Show more lines 
+
+Explanation 
+
+Creates a graph workflow using the GraphState schema. 
+
+Python 
+
+graph 
+
+Show more lines 
+
+will hold: 
+
+Plain Text 
+
+Nodes 
+
+Edges 
+
+Routing Logic 
+
+Show more lines 
+
+ 
+
+Step 4: Add Nodes 
+
+Python 
+
+graph.add_node( 
+
+"classify", 
+
+classify_node 
+
+) 
+
+  
+
+graph.add_node( 
+
+"risk", 
+
+risk_node 
+
+) 
+
+  
+
+graph.add_node( 
+
+"response", 
+
+response_node 
+
+) 
+
+Show more lines 
+
+Explanation 
+
+Registers functions as nodes. 
+
+Graph becomes: 
+
+Plain Text 
+
+classify 
+
+risk 
+
+response 
+
+Show more lines 
+
+ 
+
+Step 5: Define Entry Point 
+
+Python 
+
+graph.set_entry_point( 
+
+"classify" 
+
+) 
+
+Show more lines 
+
+Explanation 
+
+Workflow always starts from: 
+
+Plain Text 
+
+classify node 
+
+Show more lines 
+
+ 
+
+Step 6: Add Edges 
+
+Python 
+
+graph.add_edge( 
+
+"classify", 
+
+"risk" 
+
+) 
+
+  
+
+graph.add_edge( 
+
+"risk", 
+
+"response" 
+
+) 
+
+Show more lines 
+
+Explanation 
+
+Defines execution order. 
+
+Plain Text 
+
+classify 
+
+↓ 
+
+risk 
+
+↓ 
+
+response 
+
+Show more lines 
+
+ 
+
+Step 7: Add End Node 
+
+Python 
+
+from langgraph.graph import END 
+
+  
+
+graph.add_edge( 
+
+"response", 
+
+END 
+
+) 
+
+Show more lines 
+
+Explanation 
+
+Ends workflow after response node. 
+
+Plain Text 
+
+response 
+
+↓ 
+
+END 
+
+Show more lines 
+
+ 
+
+Step 8: Compile Graph 
+
+Python 
+
+app = graph.compile() 
+
+`` 
+
+Show more lines 
+
+Explanation 
+
+Converts graph definition into an executable workflow. 
+
+Without compile: 
+
+Python 
+
+app.invoke() 
+
+` 
+
+Show more lines 
+
+won't work. 
+
+ 
+
+Step 9: Execute Graph 
+
+Python 
+
+result = app.invoke( 
+
+{ 
+
+"message": "show balance" 
+
+} 
+
+) 
+
+  
+
+print(result) 
+
+`` 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+{ 
+
+'message': 'show balance', 
+
+'intent': 'balance', 
+
+'risk': 'low', 
+
+'response': 'Your balance is ₹50,000' 
+
+} 
+
+Show more lines 
+
+ 
+
+Complete Program 
+
+Python 
+
+from typing import TypedDict 
+
+from langgraph.graph import StateGraph, END 
+
+  
+
+class GraphState(TypedDict): 
+
+message: str 
+
+intent: str 
+
+risk: str 
+
+response: str 
+
+  
+
+def classify_node(state): 
+
+return { 
+
+"intent": "balance" 
+
+} 
+
+  
+
+def risk_node(state): 
+
+return { 
+
+"risk": "low" 
+
+} 
+
+  
+
+def response_node(state): 
+
+return { 
+
+"response": "Your balance is ₹50,000" 
+
+} 
+
+  
+
+graph = StateGraph(GraphState) 
+
+  
+
+graph.add_node("classify", classify_node) 
+
+graph.add_node("risk", risk_node) 
+
+graph.add_node("response", response_node) 
+
+  
+
+graph.set_entry_point("classify") 
+
+  
+
+graph.add_edge("classify", "risk") 
+
+graph.add_edge("risk", "response") 
+
+graph.add_edge("response", END) 
+
+  
+
+app = graph.compile() 
+
+  
+
+result = app.invoke( 
+
+{ 
+
+"message": "show balance" 
+
+} 
+
+) 
+
+  
+
+print(result) 
+
+Show more lines 
+
+ 
+
+Conditional Routing Example 
+
+Sometimes the next node depends on the intent. 
+
+Python 
+
+def route(state): 
+
+  
+
+if state["intent"] == "loan": 
+
+return "loan" 
+
+  
+
+return "account" 
+
+Show more lines 
+
+Add conditional edge: 
+
+Python 
+
+graph.add_conditional_edges( 
+
+"classify", 
+
+route 
+
+) 
+
+Show more lines 
+
+ 
+
+Flow 
+
+Plain Text 
+
+classify 
+
+| 
+
+------------------ 
+
+| | 
+
+loan_agent account_agent 
+
+| | 
+
+------------------ 
+
+Show more lines 
+
+ 
+
+Banking Assistant Example 
+
+Plain Text 
+
+User: 
+
+What is my balance? 
+
+  
+
+Show more lines 
+
+Flow: 
+
+Plain Text 
+
+START 
+
+↓ 
+
+Classify Intent 
+
+↓ 
+
+Intent = balance 
+
+↓ 
+
+Account Agent 
+
+↓ 
+
+Generate Response 
+
+↓ 
+
+END 
+
+Show more lines 
+
+ 
+
+Plain Text 
+
+User: 
+
+What is my loan EMI? 
+
+Show more lines 
+
+Flow: 
+
+Plain Text 
+
+START 
+
+↓ 
+
+Classify Intent 
+
+↓ 
+
+Intent = loan 
+
+↓ 
+
+Loan Agent 
+
+↓ 
+
+Response 
+
+↓ 
+
+END 
+
+Show more lines 
+
+ 
+
+Important LangGraph Initialization Components 
+
+State 
+
+Python 
+
+class GraphState(TypedDict) 
+
+Show more lines 
+
+Stores shared data. 
+
+ 
+
+Node 
+
+Python 
+
+graph.add_node() 
+
+Show more lines 
+
+Represents a function or agent. 
+
+ 
+
+Edge 
+
+Python 
+
+graph.add_edge() 
+
+Show more lines 
+
+Defines execution path. 
+
+ 
+
+Conditional Edge 
+
+Python 
+
+graph.add_conditional_edges() 
+
+Show more lines 
+
+Defines dynamic routing. 
+
+ 
+
+Entry Point 
+
+Python 
+
+graph.set_entry_point() 
+
+Show more lines 
+
+Starting node. 
+
+ 
+
+END 
+
+Python 
+
+END 
+
+Show more lines 
+
+Stops graph execution. 
+
+ 
+
+Compile 
+
+Python 
+
+graph.compile() 
+
+Show more lines 
+
+Creates executable graph. 
+
+ 
+
+Invoke 
+
+Python 
+
+app.invoke() 
+
+Show more lines 
+
+Runs the workflow. 
+
+ 
+
+Interview Answer 
+
+What is LangGraph Initialization? 
+
+LangGraph initialization is the process of creating a workflow by defining a state schema, adding nodes, connecting them with edges, setting an entry point, and compiling the graph into an executable application. 
+
+Steps: 
+
+Plain Text 
+
+1. Create GraphState 
+
+2. Create Nodes 
+
+3. Initialize StateGraph 
+
+4. Add Nodes 
+
+5. Set Entry Point 
+
+6. Add Edges 
+
+7. Add END Node 
+
+8. Compile Graph 
+
+9. Invoke Graph 
+
+Show more lines 
+
+One-Line Interview Answer 
+
+LangGraph initialization involves defining a shared state, registering nodes, connecting them through edges or conditional routes, and compiling the graph into an executable workflow for multi-step AI applications. 
+
+ 
+
+Orchestration Service and Agents in a Multi-Agent System 
+
+In enterprise AI systems, we usually have multiple specialized agents: 
+
+Plain Text 
+
+Account Agent 
+
+Loan Agent 
+
+Policy Agent 
+
+Dispute Agent 
+
+Complaint Agent 
+
+RAG Agent 
+
+Show more lines 
+
+Instead of calling agents directly, an Orchestrator manages the complete workflow. 
+
+ 
+
+Architecture 
+
+Plain Text 
+
+User Query 
+
+| 
+
+V 
+
+Orchestrator 
+
+| 
+
+-------------------------------- 
+
+| | | 
+
+V V V 
+
+Account Agent Loan Agent Policy Agent 
+
+| | | 
+
+-------------------------------- 
+
+| 
+
+V 
+
+Final Response 
+
+Show more lines 
+
+ 
+
+Agent Classes 
+
+Account Agent 
+
+Python 
+
+class AccountAgent: 
+
+  
+
+def account_summary(self, customer_id): 
+
+  
+
+return { 
+
+"account_type": "Savings", 
+
+"balance": 50000 
+
+} 
+
+Show more lines 
+
+Responsibility 
+
+Plain Text 
+
+Balance Inquiry 
+
+Account Details 
+
+Branch Details 
+
+Account Type 
+
+Show more lines 
+
+ 
+
+Loan Agent 
+
+Python 
+
+class LoanAgent: 
+
+  
+
+def loan_summary(self, customer_id): 
+
+  
+
+return { 
+
+"loan_type": "Home Loan", 
+
+"emi": 18000, 
+
+"balance": 900000 
+
+} 
+
+Show more lines 
+
+Responsibility 
+
+Plain Text 
+
+Loan Details 
+
+EMI 
+
+Outstanding Balance 
+
+Interest Rate 
+
+Show more lines 
+
+ 
+
+Policy Agent 
+
+Python 
+
+class PolicyAgent: 
+
+  
+
+def get_policy(self, question): 
+
+  
+
+return "Home loan foreclosure charge is 2%" 
+
+Show more lines 
+
+Responsibility 
+
+Plain Text 
+
+Bank Policies 
+
+FAQ 
+
+Rules 
+
+Terms & Conditions 
+
+`` 
+
+Show more lines 
+
+ 
+
+Orchestration Service 
+
+The orchestrator decides: 
+
+Plain Text 
+
+1. Which agent to call 
+
+2. In what order 
+
+3. Which result to return 
+
+4. Error handling 
+
+5. Response aggregation 
+
+` 
+
+Show more lines 
+
+ 
+
+Intent Classification 
+
+Python 
+
+def classify_intent(message): 
+
+  
+
+text = message.lower() 
+
+  
+
+if "balance" in text: 
+
+return "account" 
+
+  
+
+if "loan" in text: 
+
+return "loan" 
+
+  
+
+if "policy" in text: 
+
+return "policy" 
+
+  
+
+return "fallback" 
+
+Show more lines 
+
+ 
+
+Orchestrator Class 
+
+Python 
+
+class Orchestrator: 
+
+  
+
+def __init__(self): 
+
+  
+
+self.account_agent = AccountAgent() 
+
+self.loan_agent = LoanAgent() 
+
+self.policy_agent = PolicyAgent() 
+
+Show more lines 
+
+Explanation 
+
+Initialize all agents once. 
+
+Python 
+
+self.account_agent 
+
+Show more lines 
+
+will be reused for every request. 
+
+ 
+
+Route Request 
+
+Python 
+
+def route(self, message): 
+
+  
+
+intent = classify_intent(message) 
+
+  
+
+if intent == "account": 
+
+  
+
+return self.account_agent 
+
+  
+
+elif intent == "loan": 
+
+  
+
+return self.loan_agent 
+
+  
+
+elif intent == "policy": 
+
+  
+
+return self.policy_agent 
+
+  
+
+return None 
+
+Show more lines 
+
+Purpose 
+
+Determines the correct agent. 
+
+Example: 
+
+Plain Text 
+
+Show my balance 
+
+` 
+
+Show more lines 
+
+returns: 
+
+Python 
+
+AccountAgent 
+
+Show more lines 
+
+ 
+
+Execute Workflow 
+
+Python 
+
+def execute(self, message, customer_id): 
+
+  
+
+intent = classify_intent(message) 
+
+  
+
+if intent == "account": 
+
+  
+
+return self.account_agent.account_summary( 
+
+customer_id 
+
+) 
+
+  
+
+elif intent == "loan": 
+
+  
+
+return self.loan_agent.loan_summary( 
+
+customer_id 
+
+) 
+
+  
+
+elif intent == "policy": 
+
+  
+
+return self.policy_agent.get_policy( 
+
+message 
+
+) 
+
+  
+
+return "Unsupported Request" 
+
+Show more lines 
+
+ 
+
+Complete Orchestrator 
+
+Python 
+
+class Orchestrator: 
+
+  
+
+def __init__(self): 
+
+  
+
+self.account_agent = AccountAgent() 
+
+self.loan_agent = LoanAgent() 
+
+self.policy_agent = PolicyAgent() 
+
+  
+
+def execute(self, message, customer_id): 
+
+  
+
+intent = classify_intent(message) 
+
+  
+
+if intent == "account": 
+
+  
+
+return self.account_agent.account_summary( 
+
+customer_id 
+
+) 
+
+  
+
+elif intent == "loan": 
+
+  
+
+return self.loan_agent.loan_summary( 
+
+customer_id 
+
+) 
+
+  
+
+elif intent == "policy": 
+
+  
+
+return self.policy_agent.get_policy( 
+
+message 
+
+) 
+
+  
+
+return "Unsupported Request" 
+
+Show more lines 
+
+ 
+
+Usage 
+
+Python 
+
+orchestrator = Orchestrator() 
+
+  
+
+result = orchestrator.execute( 
+
+"Show my loan details", 
+
+"C101" 
+
+) 
+
+  
+
+print(result) 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+{ 
+
+"loan_type":"Home Loan", 
+
+"emi":18000, 
+
+"balance":900000 
+
+} 
+
+  
+
+Show more lines 
+
+ 
+
+Multi-Agent Execution Example 
+
+Some queries require multiple agents. 
+
+Query: 
+
+Plain Text 
+
+Show my home loan balance and interest policy. 
+
+Show more lines 
+
+Needs: 
+
+Plain Text 
+
+Loan Agent 
+
++ 
+
+Policy Agent 
+
+Show more lines 
+
+ 
+
+Orchestrator Handling Multiple Agents 
+
+Python 
+
+def execute(self, message, customer_id): 
+
+  
+
+results = {} 
+
+  
+
+if "loan" in message.lower(): 
+
+  
+
+results["loan"] = ( 
+
+self.loan_agent.loan_summary( 
+
+customer_id 
+
+) 
+
+) 
+
+  
+
+if "policy" in message.lower(): 
+
+  
+
+results["policy"] = ( 
+
+self.policy_agent.get_policy( 
+
+message 
+
+) 
+
+) 
+
+  
+
+return results 
+
+Show more lines 
+
+Output: 
+
+Python 
+
+{ 
+
+"loan":{ 
+
+"emi":18000, 
+
+"balance":900000 
+
+}, 
+
+  
+
+"policy": 
+
+"Foreclosure charge is 2%" 
+
+} 
+
+Show more lines 
+
+ 
+
+Parallel Execution (Advanced) 
+
+Instead of: 
+
+Plain Text 
+
+Loan Agent 
+
+wait 
+
+Policy Agent 
+
+wait 
+
+Show more lines 
+
+run simultaneously. 
+
+Python 
+
+from concurrent.futures import ThreadPoolExecutor 
+
+Show more lines 
+
+ 
+
+Example 
+
+Python 
+
+with ThreadPoolExecutor() as executor: 
+
+  
+
+loan_future = executor.submit( 
+
+self.loan_agent.loan_summary, 
+
+customer_id 
+
+) 
+
+  
+
+policy_future = executor.submit( 
+
+self.policy_agent.get_policy, 
+
+message 
+
+) 
+
+  
+
+loan_result = loan_future.result() 
+
+policy_result = policy_future.result() 
+
+Show more lines 
+
+ 
+
+Aggregation 
+
+The orchestrator combines outputs. 
+
+Python 
+
+response = { 
+
+"loan": loan_result, 
+
+"policy": policy_result 
+
+} 
+
+Show more lines 
+
+ 
+
+Error Handling 
+
+If an agent fails: 
+
+Python 
+
+try: 
+
+  
+
+result = self.loan_agent.loan_summary( 
+
+customer_id 
+
+) 
+
+  
+
+except Exception: 
+
+  
+
+result = "Loan service unavailable" 
+
+Show more lines 
+
+Benefits: 
+
+Plain Text 
+
+Whole application doesn't fail. 
+
+  
+
+Show more lines 
+
+ 
+
+End-to-End Orchestrator Flow 
+
+User Query: 
+
+Plain Text 
+
+What is my loan EMI and what is the foreclosure policy? 
+
+Show more lines 
+
+Step 1 
+
+Receive query 
+
+Plain Text 
+
+message 
+
+Show more lines 
+
+↓ 
+
+Step 2 
+
+Intent Classification 
+
+Plain Text 
+
+loan + policy 
+
+Show more lines 
+
+↓ 
+
+Step 3 
+
+Select Agents 
+
+Plain Text 
+
+Loan Agent 
+
+Policy Agent 
+
+`` 
+
+Show more lines 
+
+↓ 
+
+Step 4 
+
+Execute Agents 
+
+Plain Text 
+
+Loan Agent returns: 
+
+  
+
+EMI = 18000 
+
+  
+
+Policy Agent returns: 
+
+  
+
+Foreclosure Charge = 2% 
+
+Show more lines 
+
+↓ 
+
+Step 5 
+
+Aggregate Results 
+
+Python 
+
+{ 
+
+"emi":18000, 
+
+"policy":"2% foreclosure charge" 
+
+} 
+
+Show more lines 
+
+↓ 
+
+Step 6 
+
+Generate Final Response 
+
+Plain Text 
+
+Your home loan EMI is ₹18,000 and the foreclosure charge is 2%. 
+
+Show more lines 
+
+ 
+
+LangGraph Orchestrator Example 
+
+Python 
+
+from langgraph.graph import StateGraph 
+
+  
+
+graph = StateGraph(GraphState) 
+
+  
+
+graph.add_node("classify", classify_node) 
+
+graph.add_node("loan", loan_node) 
+
+graph.add_node("policy", policy_node) 
+
+  
+
+graph.add_conditional_edges( 
+
+"classify", 
+
+route_function 
+
+) 
+
+  
+
+app = graph.compile() 
+
+Show more lines 
+
+Routing: 
+
+Plain Text 
+
+START 
+
+| 
+
+Classify 
+
+| 
+
+--------------------- 
+
+| | | 
+
+Loan Policy Account 
+
+| | | 
+
+--------------------- 
+
+| 
+
+END 
+
+`` 
+
+Show more lines 
+
+ 
+
+Responsibilities of an Orchestrator 
+
+1. Intent Detection 
+
+Plain Text 
+
+Find user intent 
+
+Show more lines 
+
+ 
+
+2. Agent Selection 
+
+Plain Text 
+
+Choose correct agent 
+
+Show more lines 
+
+ 
+
+3. Routing 
+
+Plain Text 
+
+Direct request to selected agent 
+
+Show more lines 
+
+ 
+
+4. Sequential Execution 
+
+Plain Text 
+
+Agent A 
+
+↓ 
+
+Agent B 
+
+↓ 
+
+Agent C 
+
+Show more lines 
+
+ 
+
+5. Parallel Execution 
+
+Plain Text 
+
+Agent A 
+
+Agent B 
+
+Agent C 
+
+  
+
+all run together 
+
+Show more lines 
+
+ 
+
+6. Result Aggregation 
+
+Plain Text 
+
+Combine outputs 
+
+Show more lines 
+
+ 
+
+7. Error Handling 
+
+Plain Text 
+
+Retry 
+
+Fallback 
+
+Graceful Error 
+
+Show more lines 
+
+ 
+
+8. Final Response Creation 
+
+Plain Text 
+
+Convert agent outputs 
+
+into user-friendly response 
+
+Show more lines 
+
+ 
+
+Interview Answer 
+
+What is an Orchestrator? 
+
+An orchestrator is a central controller that manages the execution of multiple agents, decides which agents should be invoked, coordinates their execution order, aggregates results, handles failures, and generates the final response. 
+
+End-to-End Flow 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+Intent Classification 
+
+↓ 
+
+Agent Selection 
+
+↓ 
+
+Agent Execution 
+
+↓ 
+
+Result Aggregation 
+
+↓ 
+
+Error Handling 
+
+↓ 
+
+Final Response 
+
+Show more lines 
+
+One-Line Interview Answer 
+
+The orchestrator acts as the brain of a multi-agent system, coordinating agent selection, routing, execution, aggregation, and response generation to ensure the user's query is handled efficiently end-to-end. 
+
+Prompt Engineering Best Practices to Reduce Token Cost 
+
+In production AI systems, token cost = Input Tokens + Output Tokens. 
+
+Plain Text 
+
+More Tokens 
+
+↓ 
+
+Higher Cost 
+
+↓ 
+
+Slower Response 
+
+Show more lines 
+
+Goal: 
+
+Plain Text 
+
+Same Quality 
+
++ 
+
+Fewer Tokens 
+
+= 
+
+Efficient AI System 
+
+Show more lines 
+
+ 
+
+1. Be Specific and Direct 
+
+Bad Prompt 
+
+Plain Text 
+
+Can you please explain everything about home loans, 
+
+their types, eligibility, documentation, 
+
+interest rate and complete process? 
+
+Show more lines 
+
+Many tokens. 
+
+ 
+
+Better Prompt 
+
+Plain Text 
+
+Summarize home loan eligibility in 5 bullet points. 
+
+Show more lines 
+
+Benefits: 
+
+✅ Less input tokens 
+
+✅ Less output tokens 
+
+✅ Faster response 
+
+ 
+
+2. Limit Output Explicitly 
+
+Bad 
+
+Plain Text 
+
+Explain RAG. 
+
+Show more lines 
+
+LLM may generate 500 words. 
+
+ 
+
+Good 
+
+Plain Text 
+
+Explain RAG in 50 words. 
+
+Show more lines 
+
+or 
+
+Plain Text 
+
+Explain RAG in 5 bullet points. 
+
+`` 
+
+Show more lines 
+
+Benefits: 
+
+✅ Predictable response size 
+
+✅ Lower output tokens 
+
+ 
+
+3. Use Structured Instructions 
+
+Bad 
+
+Plain Text 
+
+Tell me about machine learning. 
+
+`` 
+
+Show more lines 
+
+ 
+
+Good 
+
+Plain Text 
+
+Explain machine learning: 
+
+1. Definition 
+
+2. Types 
+
+3. One real-world example 
+
+  
+
+Limit response to 100 words. 
+
+Show more lines 
+
+Benefits: 
+
+✅ Focused answer 
+
+✅ Less hallucination 
+
+✅ Less tokens 
+
+ 
+
+4. Avoid Repeating Context 
+
+Bad 
+
+Every request sends: 
+
+Plain Text 
+
+Company policy document 
+
+(5000 words) 
+
+  
+
+Question 1 
+
+  
+
+Company policy document 
+
+(5000 words) 
+
+  
+
+Question 2 
+
+  
+
+Company policy document 
+
+(5000 words) 
+
+  
+
+Question 3 
+
+Show more lines 
+
+ 
+
+Better 
+
+Use Retrieval (RAG) 
+
+Plain Text 
+
+Question 
+
+↓ 
+
+Retrieve relevant chunk only 
+
+↓ 
+
+Send 200 words instead of 5000 
+
+Show more lines 
+
+Token savings can be: 
+
+Plain Text 
+
+5000 → 200 tokens 
+
+Show more lines 
+
+ 
+
+5. Chunk Before Sending 
+
+Bad 
+
+Plain Text 
+
+Send entire PDF: 
+
+50 pages 
+
+Show more lines 
+
+ 
+
+Better 
+
+Plain Text 
+
+Retrieve top 3 chunks only 
+
+Show more lines 
+
+Example: 
+
+Plain Text 
+
+Query: 
+
+Home loan EMI 
+
+  
+
+Retrieved: 
+
+  
+
+Chunk 1 
+
+Chunk 2 
+
+Chunk 3 
+
+Show more lines 
+
+instead of: 
+
+Plain Text 
+
+Whole banking manual 
+
+Show more lines 
+
+Savings: 
+
+Plain Text 
+
+95%+ 
+
+Show more lines 
+
+ 
+
+6. Use Re-ranking 
+
+Without reranking: 
+
+Plain Text 
+
+Top 20 chunks 
+
+Show more lines 
+
+sent to LLM. 
+
+ 
+
+With reranking: 
+
+Plain Text 
+
+Top 3 chunks 
+
+  
+
+Show more lines 
+
+sent to LLM. 
+
+Benefits: 
+
+✅ Better context 
+
+✅ Lower token usage 
+
+✅ Lower cost 
+
+ 
+
+7. Use Conversation Summarization 
+
+Bad 
+
+Send complete chat history. 
+
+Plain Text 
+
+Message 1 
+
+  
+
+Message 2 
+
+  
+
+Message 3 
+
+  
+
+... 
+
+  
+
+Message 100 
+
+Show more lines 
+
+ 
+
+Better 
+
+Store summary. 
+
+Plain Text 
+
+User has active home loan. 
+
+Loan balance ₹5L. 
+
+Looking for EMI details. 
+
+Show more lines 
+
+Only send summary. 
+
+ 
+
+LangChain Example 
+
+Python 
+
+from langchain.memory import ConversationSummaryMemory 
+
+Show more lines 
+
+Benefits: 
+
+✅ Huge token savings 
+
+ 
+
+8. Cache Responses 
+
+If users ask: 
+
+Plain Text 
+
+What is AI? 
+
+Show more lines 
+
+100 times. 
+
+Without cache: 
+
+Plain Text 
+
+100 LLM calls 
+
+Show more lines 
+
+ 
+
+With Redis: 
+
+Plain Text 
+
+1 LLM call 
+
+99 cache hits 
+
+Show more lines 
+
+Benefits: 
+
+✅ Almost zero token cost after first call 
+
+ 
+
+9. Use Semantic Cache 
+
+Normal Cache: 
+
+Plain Text 
+
+What is AI? 
+
+Show more lines 
+
+Only exact match. 
+
+ 
+
+Semantic Cache: 
+
+Plain Text 
+
+What is AI? 
+
+  
+
+Explain AI 
+
+  
+
+What is Artificial Intelligence? 
+
+Show more lines 
+
+All can reuse same answer. 
+
+Benefits: 
+
+✅ More cache hits 
+
+✅ Lower token usage 
+
+ 
+
+10. Compress Retrieved Context 
+
+Bad 
+
+Plain Text 
+
+Customer policy document 
+
+2000 words 
+
+Show more lines 
+
+ 
+
+Better 
+
+Create summary first. 
+
+Plain Text 
+
+Policy Summary: 
+
+Foreclosure charge = 2% 
+
+Prepayment allowed. 
+
+Show more lines 
+
+Send summary. 
+
+Benefits: 
+
+✅ Less context 
+
+✅ Faster LLM generation 
+
+ 
+
+11. Use Smaller Models for Simple Tasks 
+
+Bad 
+
+Plain Text 
+
+GPT for: 
+
+Intent Classification 
+
+Show more lines 
+
+ 
+
+Better 
+
+Use rules. 
+
+Python 
+
+if "loan" in message: 
+
+return "loan" 
+
+Show more lines 
+
+Benefits: 
+
+✅ Zero LLM tokens 
+
+✅ Instant execution 
+
+ 
+
+12. Use Deterministic Routing Before LLM 
+
+Bad 
+
+Every query goes to GPT. 
+
+ 
+
+Better 
+
+Python 
+
+if "balance" in query: 
+
+Account Agent 
+
+  
+
+if "loan" in query: 
+
+Loan Agent 
+
+Show more lines 
+
+Only uncertain cases use LLM. 
+
+Benefits: 
+
+✅ Massive cost reduction 
+
+ 
+
+13. Use JSON Output 
+
+Bad 
+
+Plain Text 
+
+Generate detailed explanation and analysis... 
+
+Show more lines 
+
+ 
+
+Good 
+
+Plain Text 
+
+Return JSON: 
+
+  
+
+{ 
+
+"intent":"", 
+
+"confidence":"" 
+
+} 
+
+Show more lines 
+
+Benefits: 
+
+✅ Shorter output 
+
+✅ Easier parsing 
+
+✅ Lower tokens 
+
+ 
+
+14. Use Few-Shot Examples Carefully 
+
+Bad 
+
+Plain Text 
+
+20 examples 
+
+Show more lines 
+
+every request. 
+
+ 
+
+Better 
+
+Plain Text 
+
+2-3 high-quality examples 
+
+Show more lines 
+
+Benefits: 
+
+✅ Same performance 
+
+✅ Less token consumption 
+
+ 
+
+15. Use System Prompt Efficiently 
+
+Bad 
+
+Plain Text 
+
+Very large system prompt 
+
+5000 tokens 
+
+Show more lines 
+
+included in every request. 
+
+ 
+
+Better 
+
+Plain Text 
+
+You are a banking assistant. 
+
+Answer briefly and accurately. 
+
+Show more lines 
+
+Benefits: 
+
+✅ Less repeated token usage 
+
+ 
+
+Practical Banking Assistant Flow 
+
+Inefficient 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+Full Document (200 pages) 
+
+↓ 
+
+No Cache 
+
+↓ 
+
+Top 20 Chunks 
+
+↓ 
+
+GPT 
+
+Show more lines 
+
+Cost: 
+
+Plain Text 
+
+Very High 
+
+Show more lines 
+
+ 
+
+Optimized 
+
+Plain Text 
+
+User Query 
+
+↓ 
+
+Redis Cache Check 
+
+↓ 
+
+Intent Classification 
+
+↓ 
+
+Hybrid Search 
+
+↓ 
+
+Re-ranking 
+
+↓ 
+
+Top 3 Chunks 
+
+↓ 
+
+Compressed Context 
+
+↓ 
+
+GPT 
+
+Show more lines 
+
+Cost: 
+
+Plain Text 
+
+Very Low 
+
+Show more lines 
+
+ 
+
+Token Saving Techniques Ranked 
+
+Highest Savings 
+
+Plain Text 
+
+1. Redis Cache 
+
+2. Semantic Cache 
+
+3. RAG Retrieval 
+
+4. Conversation Summarization 
+
+5. Deterministic Intent Classification 
+
+Show more lines 
+
+Medium Savings 
+
+Plain Text 
+
+6. Re-ranking 
+
+7. Chunk Compression 
+
+8. Structured Prompts 
+
+Show more lines 
+
+Lower Savings 
+
+Plain Text 
+
+9. Small Prompt Optimization 
+
+10. JSON Responses 
+
+Show more lines 
+
+ 
+
+Interview Answer 
+
+How can we reduce token cost in LLM applications? 
+
+Key techniques include: 
+
+Writing short and specific prompts 
+
+Limiting response length 
+
+Using RAG instead of sending full documents 
+
+Re-ranking retrieved chunks 
+
+Redis caching for responses and embeddings 
+
+Conversation summarization 
+
+Deterministic routing before LLM calls 
+
+Context compression 
+
+Semantic caching 
+
+Using smaller models for simple tasks 
+
+One-Line Answer 
+
+The best way to reduce token cost is to send only the most relevant context using RAG and re-ranking, avoid repeated LLM calls through Redis caching, summarize conversation history, and use concise prompts with controlled output length. 
+
+ 
